@@ -60,6 +60,9 @@ type Model struct {
 	view         View
 	width        int
 	height       int
+	spotHeatmap  components.HeatmapRenderer
+	spotMode     components.HeatmapMode
+	spotGridTop  int
 	symbol       string
 	interval     int
 	zoom         int
@@ -415,8 +418,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		m.searching = true
 	case "j", "down":
+		if m.view == SpotMarket && components.UsesHeatmapGrid(m.width, m.height, m.spotMode) {
+			m.spotGridTop++
+			return m, nil
+		}
 		m.moveSelection(1)
 	case "k", "up":
+		if m.view == SpotMarket && components.UsesHeatmapGrid(m.width, m.height, m.spotMode) {
+			m.spotGridTop = max(0, m.spotGridTop-1)
+			return m, nil
+		}
 		m.moveSelection(-1)
 	case "g":
 		m.selected, m.page = 0, 0
@@ -456,6 +467,11 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterRows()
 	case "t":
 		m.themeIndex = (m.themeIndex + 1) % len(theme.Names)
+	case "v":
+		if m.view == SpotMarket {
+			m.spotMode = (m.spotMode + 1) % 3
+			m.spotGridTop = 0
+		}
 	case "a":
 		m.indicators = !m.indicators
 	case "Q":
@@ -501,6 +517,7 @@ func (m *Model) View() string {
 		return "Starting bnx…"
 	}
 	contentHeight := max(4, m.height-7)
+	spotBodyHeight := max(1, m.height-lipgloss.Height(m.header())-lipgloss.Height(m.statusBar())-lipgloss.Height(m.footer()))
 	var body string
 	switch m.view {
 	case Dashboard:
@@ -520,7 +537,7 @@ func (m *Model) View() string {
 	case Help:
 		body = m.helpView()
 	case SpotMarket:
-		body = m.spotMarketView(contentHeight)
+		body = m.spotMarketView(spotBodyHeight)
 	}
 	joined := lipgloss.JoinVertical(lipgloss.Left, m.header(), body, m.statusBar(), m.footer())
 	if m.paletteOpen {
@@ -848,8 +865,19 @@ func (m *Model) analysisTickers() []models.Ticker24h {
 func (m *Model) spotMarketView(height int) string {
 	tiles := m.spotMarketTiles()
 	var output strings.Builder
-	output.WriteString("\n  SPOT MARKET  ·  TOP 100 USDT PAIRS BY 24H QUOTE VOLUME\n")
-	output.WriteString("  Tile area follows absolute 24h change, capped at 40% with a minimum tile size.\n")
+	output.WriteString("  SPOT MARKET  /  24H MOVERS\n")
+	gridMode := components.UsesHeatmapGrid(m.width, m.height, m.spotMode)
+	headerLines := 1
+	if !gridMode {
+		output.WriteString("  TOP 100 USDT BY QUOTE VOLUME  ·  SIZE & COLOUR = 24H CHANGE\n")
+		headerLines++
+	}
+	if gridMode {
+		if m.spotMode == components.HeatmapAuto {
+			output.WriteString("  Terminal small: grid mode (resize to 120x35 for treemap)\n")
+			headerLines++
+		}
+	}
 	if len(tiles) == 0 {
 		switch {
 		case m.loading:
@@ -861,13 +889,20 @@ func (m *Model) spotMarketView(height int) string {
 		}
 		return output.String()
 	}
-	heatmapHeight := max(1, height-5)
-	output.WriteByte('\n')
-	output.WriteString(components.Heatmap(tiles, max(1, m.width-4), heatmapHeight, m.palette()))
-	green := lipgloss.NewStyle().Foreground(m.palette().Green).Bold(true).Render("POSITIVE")
-	red := lipgloss.NewStyle().Foreground(m.palette().Red).Bold(true).Render("NEGATIVE")
-	neutral := lipgloss.NewStyle().Foreground(m.palette().Muted).Render("UNCHANGED")
-	_, _ = fmt.Fprintf(&output, "\n\n  %d coins  ·  %s  ·  %s  ·  %s", len(tiles), green, red, neutral)
+	footerLines := 1
+	if gridMode {
+		footerLines = 2
+	}
+	heatmapHeight := max(1, height-headerLines-footerLines)
+	output.WriteString(m.spotHeatmap.Render(tiles, max(1, m.width), heatmapHeight, m.width, m.height, m.palette(), m.spotMode, m.spotGridTop))
+	green := lipgloss.NewStyle().Foreground(m.palette().HeatPositiveStrong).Bold(true).Render("+ GAIN")
+	red := lipgloss.NewStyle().Foreground(m.palette().HeatNegativeStrong).Bold(true).Render("− LOSS")
+	neutral := lipgloss.NewStyle().Foreground(m.palette().Muted).Render("0 FLAT")
+	if gridMode {
+		_, _ = fmt.Fprintf(&output, "\n  %s   %s   %s\n  %s  ·  v LAYOUT  ·  j/k SCROLL", green, red, neutral, components.HeatmapGridStatus(len(tiles), m.width, heatmapHeight, m.spotGridTop))
+	} else {
+		_, _ = fmt.Fprintf(&output, "\n  %d PAIRS   %s   %s   %s   ·   v LAYOUT   r REFRESH", len(tiles), green, red, neutral)
+	}
 	return output.String()
 }
 
@@ -887,21 +922,25 @@ func (m *Model) spotMarketTiles() []components.HeatmapTile {
 		}
 		coins = append(coins, rankedCoin{symbol: ticker.Symbol, volume: ticker.QuoteVolume, change: ticker.PriceChangePercent})
 	}
-	sort.Slice(coins, func(i, j int) bool { return coins[i].volume.GreaterThan(coins[j].volume) })
+	sort.Slice(coins, func(i, j int) bool {
+		if coins[i].volume.Equal(coins[j].volume) {
+			return coins[i].symbol < coins[j].symbol
+		}
+		return coins[i].volume.GreaterThan(coins[j].volume)
+	})
 	coins = coins[:min(100, len(coins))]
 	tiles := make([]components.HeatmapTile, 0, len(coins))
+	rawWeights := make([]float64, len(coins))
 	for index, coin := range coins {
-		change := coin.change.Abs()
-		if change.GreaterThan(decimal.NewFromInt(40)) {
-			change = decimal.NewFromInt(40)
-		}
-		if change.LessThan(decimal.NewFromFloat(0.25)) {
-			change = decimal.NewFromFloat(0.25)
-		}
+		change := coin.change.Abs().InexactFloat64()
+		rawWeights[index] = max(0.25, change)
+	}
+	weights := components.CapHeatmapWeights(rawWeights, 0.15)
+	for index, coin := range coins {
 		tiles = append(tiles, components.HeatmapTile{
 			Name:   strings.TrimSuffix(coin.symbol, "USDT"),
-			Detail: fmt.Sprintf("#%d %s", index+1, signedPercent(coin.change)),
-			Weight: change.InexactFloat64(),
+			Detail: signedPercent(coin.change),
+			Weight: weights[index],
 			Change: coin.change.InexactFloat64(),
 		})
 	}
@@ -1341,6 +1380,7 @@ func (m *Model) helpView() string {
 		"[ / ]     Change candle interval; + / - zoom chart",
 		"a         Toggle SMA, EMA, Bollinger, and RSI summaries",
 		"m         Cycle market: Spot, USDⓈ-M, COIN-M, Options",
+		"v         Cycle Spot heatmap layout; j/k scroll the compact grid",
 		"Spot Market ranks active USDT pairs by 24h quote volume; tile area follows absolute 24h change.",
 		"r         Refresh now; esc backs out",
 		": / ctrl+p Search the action and symbol palette",

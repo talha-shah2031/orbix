@@ -2,11 +2,13 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/bubblenexus/bnx/internal/binance/models"
 	marketdata "github.com/bubblenexus/bnx/internal/core/market"
+	"github.com/bubblenexus/bnx/internal/tui/components"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/shopspring/decimal"
@@ -117,6 +119,66 @@ func TestViewsFitCommonTerminalSizes(t *testing.T) {
 			require.LessOrEqual(t, lipgloss.Height(rendered), size.height, "view %d exceeds %d terminal rows", view, size.height)
 		}
 	}
+}
+
+func TestSpotMarketSwitchesBetweenTreemapAndSmallGridOnResize(t *testing.T) {
+	model := New(context.Background(), fakeService{}, marketdata.Spot, "")
+	model.view = SpotMarket
+	model.loading = false
+	for i := 0; i < 100; i++ {
+		symbol := fmt.Sprintf("C%03dUSDT", i)
+		model.tickers[symbol] = models.Ticker24h{
+			Symbol:             symbol,
+			QuoteVolume:        decimal.NewFromInt(int64(10000 - i*50)),
+			PriceChangePercent: decimal.NewFromInt(int64(i%21 - 10)),
+		}
+	}
+	for _, size := range []struct{ width, height int }{{120, 35}, {200, 50}, {80, 24}} {
+		model.width, model.height = size.width, size.height
+		model.Update(tea.WindowSizeMsg{Width: size.width, Height: size.height})
+		require.Equal(t, size.width, model.width)
+		require.Equal(t, size.height, model.height)
+		require.Equal(t, size.width < 120 || size.height < 35, components.UsesHeatmapGrid(model.width, model.height, model.spotMode))
+		rendered := model.View()
+		if size.width < 120 || size.height < 35 {
+			require.Contains(t, rendered, "Terminal small: grid mode")
+			require.NotContains(t, rendered, "SIZE & COLOUR = 24H CHANGE")
+		} else {
+			require.Contains(t, rendered, "SIZE & COLOUR = 24H CHANGE")
+			require.NotContains(t, rendered, "Terminal small: grid mode")
+		}
+		require.LessOrEqual(t, lipgloss.Height(rendered), size.height)
+		for _, line := range strings.Split(rendered, "\n") {
+			require.LessOrEqual(t, lipgloss.Width(line), size.width)
+		}
+	}
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	state := asModel(t, updated)
+	require.Equal(t, components.HeatmapTreemap, state.spotMode)
+	updated, _ = state.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	state = asModel(t, updated)
+	require.Equal(t, components.HeatmapGrid, state.spotMode)
+}
+
+func TestSpotMarketRanksByVolumeButSizesByPercentChange(t *testing.T) {
+	model := New(context.Background(), fakeService{}, marketdata.Spot, "")
+	for i := 0; i < 100; i++ {
+		symbol := fmt.Sprintf("C%03dUSDT", i)
+		change := decimal.NewFromFloat(0.5)
+		if i == 1 {
+			change = decimal.NewFromInt(5)
+		}
+		model.tickers[symbol] = models.Ticker24h{
+			Symbol:             symbol,
+			QuoteVolume:        decimal.NewFromInt(int64(10000 - i)),
+			PriceChangePercent: change,
+		}
+	}
+	tiles := model.spotMarketTiles()
+	require.Len(t, tiles, 100)
+	require.Equal(t, "C000", tiles[0].Name, "highest quote volume should rank first")
+	require.Equal(t, "C001", tiles[1].Name)
+	require.Greater(t, tiles[1].Weight, tiles[0].Weight, "larger 24h move should get the larger tile despite lower quote volume")
 }
 
 func TestDashboardUsesMajorSymbolsAndBookTickerPrices(t *testing.T) {
