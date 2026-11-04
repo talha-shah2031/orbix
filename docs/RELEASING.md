@@ -34,7 +34,7 @@ govulncheck ./...
 goreleaser check
 ```
 
-The GoReleaser configuration sets `CGO_ENABLED=0` and builds Linux, macOS, and Windows archives for amd64 and arm64. It creates checksums and archive SBOMs. No Binance credentials are needed to build or release.
+The GoReleaser configuration sets `CGO_ENABLED=0` and builds Windows ZIP archives for amd64 and arm64. It creates checksums and archive SBOMs. No Binance credentials are needed to build or release. The GitHub Actions runner is Linux, but the release artifacts are Windows executables.
 
 ## 3. Push code and create a version tag
 
@@ -46,11 +46,11 @@ git tag -a v0.1.0 -m "BNX v0.1.0"
 git push origin v0.1.0
 ```
 
-Pushing a tag matching `v*` starts `.github/workflows/release.yml`. GitHub Actions runs GoReleaser and creates a GitHub Release with platform archives, `checksums.txt`, and SBOM files. The workflow needs the repository's standard `GITHUB_TOKEN` with contents-write permission; no personal access token is required.
+Pushing a tag matching `v*` starts `.github/workflows/release.yml`. GitHub Actions runs GoReleaser and creates a GitHub Release with Windows archives, `checksums.txt`, and SBOM files. The workflow needs the repository's standard `GITHUB_TOKEN` with contents-write permission; no personal access token is required.
 
 ## 4. Inspect the release
 
-Wait for the **Release** GitHub Actions workflow to finish. Check the release page for all expected OS/architecture archives, checksums, and SBOMs. Download an archive and verify its checksum before installation. To correct a release, prepare a new patch version (for example, `v0.1.1`) rather than force-moving an already published tag.
+Wait for the **Release** GitHub Actions workflow to finish. Check the release page for both Windows architecture archives, checksums, and SBOMs. Download an archive and verify its checksum before installation. To correct a release, prepare a new patch version (for example, `v0.1.1`) rather than force-moving an already published tag.
 
 ## Local snapshot (does not publish)
 
