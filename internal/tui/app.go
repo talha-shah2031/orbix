@@ -43,9 +43,10 @@ const (
 	Alerts
 	Logs
 	Help
+	SpotMarket
 )
 
-var viewNames = [...]string{"Dashboard", "Markets", "Symbol", "Futures", "Account", "Alerts", "Logs", "Help"}
+var viewNames = [...]string{"Dashboard", "Markets", "Symbol", "Futures", "Account", "Alerts", "Logs", "Help", "Spot Market"}
 var products = [...]marketdata.Product{marketdata.Spot, marketdata.USDM, marketdata.COINM, marketdata.Options}
 var intervals = [...]string{"1m", "5m", "15m", "1h", "4h", "1d", "1w", "1M"}
 var quoteFilters = [...]string{"ALL", "USDT", "USDC", "BTC", "FDUSD", "BNB"}
@@ -340,18 +341,12 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(commands...)
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && msg.Y <= 2 {
-			index := max(0, msg.Y-1)*4 + msg.X/max(1, m.width/4)
+			row := max(0, msg.Y-1)
+			start := row * 4
+			count := min(4, len(viewNames)-start)
+			index := start + min(count-1, msg.X/max(1, m.width/count))
 			if index >= 0 && index < len(viewNames) {
-				m.view = View(index)
-				if m.view == Symbol && m.symbol != "" {
-					return m, m.loadDetail()
-				}
-				if m.view == Futures {
-					return m, m.loadFutures()
-				}
-				if m.view == Account {
-					return m, m.loadAccount()
-				}
+				return m, m.selectView(View(index))
 			}
 		}
 		return m, nil
@@ -372,8 +367,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.paletteQuery = m.paletteQuery[:len(m.paletteQuery)-1]
 			}
 		case "enter":
-			m.choosePaletteAction()
-			return m, nil
+			command := m.choosePaletteAction()
+			return m, command
 		default:
 			if msg.Type == tea.KeyRunes {
 				m.paletteQuery += string(msg.Runes)
@@ -401,17 +396,8 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	switch msg.String() {
-	case "1", "2", "3", "4", "5", "6", "7", "8":
-		m.view = View(msg.String()[0] - '1')
-		if m.view == Symbol && m.symbol != "" {
-			return m, m.loadDetail()
-		}
-		if m.view == Futures {
-			return m, m.loadFutures()
-		}
-		if m.view == Account {
-			return m, m.loadAccount()
-		}
+	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		return m, m.selectView(View(msg.String()[0] - '1'))
 	case "?":
 		m.view = Help
 	case "ctrl+p", ":":
@@ -476,6 +462,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quoteIndex = (m.quoteIndex + 1) % len(quoteFilters)
 		m.filterRows()
 	case "m":
+		if m.view == SpotMarket {
+			return m, nil
+		}
 		for index, product := range products {
 			if product == m.product {
 				m.product = products[(index+1)%len(products)]
@@ -530,6 +519,8 @@ func (m *Model) View() string {
 		body = m.diagnosticsView()
 	case Help:
 		body = m.helpView()
+	case SpotMarket:
+		body = m.spotMarketView(contentHeight)
 	}
 	joined := lipgloss.JoinVertical(lipgloss.Left, m.header(), body, m.statusBar(), m.footer())
 	if m.paletteOpen {
@@ -563,28 +554,56 @@ func (m *Model) paletteView() string {
 			break
 		}
 	}
-	if len(matches) > 8 {
-		matches = matches[:8]
+	if len(matches) > 9 {
+		matches = matches[:9]
 	}
 	return roundedPanel("COMMAND PALETTE  ·  type to filter · enter to run · esc to close", "› "+m.paletteQuery+"\n"+strings.Join(matches, "\n"), min(m.width-4, 72), m.palette())
 }
 
-func (m *Model) choosePaletteAction() {
+func (m *Model) choosePaletteAction() tea.Cmd {
 	query := strings.ToLower(strings.TrimSpace(m.paletteQuery))
 	for i, name := range viewNames {
 		if query == "" || strings.Contains(strings.ToLower(name), query) || query == strconv.Itoa(i+1) || query == strings.ToLower("open "+name) {
-			m.view = View(i)
 			m.paletteOpen, m.paletteQuery = false, ""
-			return
+			return m.selectView(View(i))
 		}
 	}
 	for _, symbol := range m.rows {
 		if query == "" || strings.Contains(strings.ToLower(symbol.Symbol), query) || query == strings.ToLower("open symbol "+symbol.Symbol) {
 			m.symbol, m.view = symbol.Symbol, Symbol
 			m.paletteOpen, m.paletteQuery = false, ""
-			return
+			return m.loadDetail()
 		}
 	}
+	return nil
+}
+
+func (m *Model) selectView(view View) tea.Cmd {
+	m.view = view
+	if view == SpotMarket && m.product != marketdata.Spot {
+		m.product = marketdata.Spot
+		m.loading = true
+		m.lastError = ""
+		m.symbols = nil
+		m.rows = nil
+		m.tickers = make(map[string]models.Ticker24h)
+		m.bookTickers = make(map[string]models.BookTicker)
+		m.sparklines = make(map[string][]models.Kline)
+		return m.loadMarket()
+	}
+	switch view {
+	case Symbol:
+		if m.symbol != "" {
+			return m.loadDetail()
+		}
+	case Futures:
+		return m.loadFutures()
+	case Account:
+		return m.loadAccount()
+	case Dashboard, Markets, Alerts, Logs, Help, SpotMarket:
+		return nil
+	}
+	return nil
 }
 
 func (m *Model) header() string {
@@ -630,7 +649,7 @@ func (m *Model) statusBar() string {
 }
 
 func (m *Model) footer() string {
-	text := "1-8 views  j/k move  / search  s sort  f favorite  F favorites  Q quote  t theme  m market  r refresh  ? help  ctrl+c/q quit"
+	text := "1-9 views  j/k move  / search  s sort  f favorite  F favorites  Q quote  t theme  m market  r refresh  ? help  ctrl+c/q quit"
 	if m.searching {
 		text = "Search: " + m.search + "_  ·  enter accept  esc cancel"
 	}
@@ -824,6 +843,69 @@ func (m *Model) analysisTickers() []models.Ticker24h {
 		}
 	}
 	return rows
+}
+
+func (m *Model) spotMarketView(height int) string {
+	tiles := m.spotMarketTiles()
+	var output strings.Builder
+	output.WriteString("\n  SPOT MARKET  ·  TOP 100 USDT PAIRS BY 24H QUOTE VOLUME\n")
+	output.WriteString("  Tile area follows absolute 24h change, capped at 40% with a minimum tile size.\n")
+	if len(tiles) == 0 {
+		switch {
+		case m.loading:
+			output.WriteString("\n  Loading Binance Spot symbols and tickers…")
+		case m.lastError != "":
+			output.WriteString("\n  Spot data unavailable: " + m.lastError)
+		default:
+			output.WriteString("\n  No USDT Spot pairs are available in the current Binance response.")
+		}
+		return output.String()
+	}
+	heatmapHeight := max(1, height-5)
+	output.WriteByte('\n')
+	output.WriteString(components.Heatmap(tiles, max(1, m.width-4), heatmapHeight, m.palette()))
+	green := lipgloss.NewStyle().Foreground(m.palette().Green).Bold(true).Render("POSITIVE")
+	red := lipgloss.NewStyle().Foreground(m.palette().Red).Bold(true).Render("NEGATIVE")
+	neutral := lipgloss.NewStyle().Foreground(m.palette().Muted).Render("UNCHANGED")
+	_, _ = fmt.Fprintf(&output, "\n\n  %d coins  ·  %s  ·  %s  ·  %s", len(tiles), green, red, neutral)
+	return output.String()
+}
+
+func (m *Model) spotMarketTiles() []components.HeatmapTile {
+	if m.product != marketdata.Spot {
+		return nil
+	}
+	type rankedCoin struct {
+		symbol string
+		volume decimal.Decimal
+		change decimal.Decimal
+	}
+	coins := make([]rankedCoin, 0, len(m.tickers))
+	for _, ticker := range m.tickers {
+		if !strings.HasSuffix(ticker.Symbol, "USDT") {
+			continue
+		}
+		coins = append(coins, rankedCoin{symbol: ticker.Symbol, volume: ticker.QuoteVolume, change: ticker.PriceChangePercent})
+	}
+	sort.Slice(coins, func(i, j int) bool { return coins[i].volume.GreaterThan(coins[j].volume) })
+	coins = coins[:min(100, len(coins))]
+	tiles := make([]components.HeatmapTile, 0, len(coins))
+	for index, coin := range coins {
+		change := coin.change.Abs()
+		if change.GreaterThan(decimal.NewFromInt(40)) {
+			change = decimal.NewFromInt(40)
+		}
+		if change.LessThan(decimal.NewFromFloat(0.25)) {
+			change = decimal.NewFromFloat(0.25)
+		}
+		tiles = append(tiles, components.HeatmapTile{
+			Name:   strings.TrimSuffix(coin.symbol, "USDT"),
+			Detail: fmt.Sprintf("#%d %s", index+1, signedPercent(coin.change)),
+			Weight: change.InexactFloat64(),
+			Change: coin.change.InexactFloat64(),
+		})
+	}
+	return tiles
 }
 
 func (m *Model) bestPrices(ticker models.Ticker24h) (string, string) {
@@ -1247,7 +1329,8 @@ func waitUserDataEvent(ctx context.Context, events <-chan json.RawMessage) tea.C
 
 func (m *Model) helpView() string {
 	bindings := []string{
-		"1–8       Switch views",
+		"1–9       Switch views",
+		"9         Open Spot Market heatmap",
 		"j/k ↑/↓   Move selection; g/G first/last row",
 		"/         Search symbols",
 		"s         Cycle sort: symbol, 24h change, quote volume",
@@ -1258,6 +1341,7 @@ func (m *Model) helpView() string {
 		"[ / ]     Change candle interval; + / - zoom chart",
 		"a         Toggle SMA, EMA, Bollinger, and RSI summaries",
 		"m         Cycle market: Spot, USDⓈ-M, COIN-M, Options",
+		"Spot Market ranks active USDT pairs by 24h quote volume; tile area follows absolute 24h change.",
 		"r         Refresh now; esc backs out",
 		": / ctrl+p Search the action and symbol palette",
 		"?         Open this help; ctrl+c/q quits",
@@ -1267,13 +1351,16 @@ func (m *Model) helpView() string {
 }
 
 func (m *Model) loadMarket() tea.Cmd {
-	ctx, service, product := m.ctx, m.service, m.product
+	ctx, service, product, view := m.ctx, m.service, m.product, m.view
 	db := m.local
 	cachedSymbols := append([]models.SymbolInfo(nil), m.symbols...)
 	return func() tea.Msg {
 		tickers, err := service.Ticker(ctx, product, "", "")
 		if err != nil {
 			return marketDataMsg{product: product, err: err}
+		}
+		if view == SpotMarket && product == marketdata.Spot {
+			return marketDataMsg{product: product, tickers: tickers}
 		}
 		bookTickers := []models.BookTicker(nil)
 		var warning error

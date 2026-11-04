@@ -83,7 +83,7 @@ Supported output formats are `table`, `json`, `ndjson`, `csv`, and `yaml`. Data 
 
 Keys `1`–`8` switch views. In Markets, use `/` to search, `j`/`k` or arrows to move, `s` to sort, `f` to favorite, and `enter` to open a symbol. On the Symbol view, `[` and `]` change interval, `+` and `-` zoom, and `a` toggles indicator summaries. `m` changes market, `t` changes theme, `r` refreshes, `:` or `Ctrl+P` opens the command palette, and `?` opens help. Press `q` or `Ctrl+C` to quit.
 
-The dashboard includes market breadth, top movers, volume leaders, and sparklines. Markets supports filtering, sorting, pagination, and watchlists. Symbol detail combines candles, order book, recent trades, and indicators. Futures, alerts, diagnostics, and help are available in their numbered views. Account data is display-only.
+The dashboard includes market breadth, top movers, volume leaders, and sparklines. Markets supports filtering, sorting, pagination, and watchlists. The Spot Market tab (`9`) filters the Spot 24-hour ticker response to symbols ending in `USDT`, then displays the top 100 by quote volume; tile area follows absolute 24-hour price change and tile color shows direction. Symbol detail combines candles, order book, recent trades, and indicators. Futures, alerts, diagnostics, and help are available in their numbered views. Account data is display-only.
 
 ## Configuration and account access
 

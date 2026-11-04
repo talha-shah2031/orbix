@@ -5,6 +5,7 @@ Bindings are shared across views unless a view has a focused search field.
 | Key | Action |
 |---|---|
 | `1`–`8` | Dashboard, Markets, Symbol, Futures, Account, Alerts, Diagnostics, Help |
+| `9` | Spot Market heatmap |
 | `j` / `k`, arrows | Move through market rows |
 | `g` / `G` | First / last market row |
 | `/` | Search symbols and assets |
