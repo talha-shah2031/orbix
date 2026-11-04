@@ -1,0 +1,11 @@
+/bin/
+/dist/
+/coverage.out
+*.log
+*.db
+*.db-shm
+*.db-wal
+.env
+.idea/
+.vscode/
+.tools/
