@@ -1,6 +1,6 @@
 # Contributing
 
-Use Go 1.24 or newer and Conventional Commits. Before committing, run:
+Use Go 1.27.3 or newer and Conventional Commits. Before committing, run:
 
 ```console
 go mod verify

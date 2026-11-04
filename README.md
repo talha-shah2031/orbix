@@ -33,7 +33,7 @@ If no release has been published yet, build from source using the instructions b
 
 ### Build from source
 
-Requires Go 1.24 or newer. From the repository root:
+Requires Go 1.27.3 or newer. From the repository root:
 
 ```sh
 go mod download

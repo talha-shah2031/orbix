@@ -3,7 +3,7 @@
 ## 2026-11-02: repository and module identity
 
 - The project lives in the `bnx/` subdirectory of the existing checkout and uses module path `github.com/bubblenexus/bnx` until a dedicated upstream repository is assigned.
-- The current module directive is Go 1.24.0, so local builds and CI use Go 1.24 or newer; this satisfies the brief's Go 1.22+ requirement.
+- The current module directive and CI toolchain are Go 1.27.3, which includes the standard-library security fixes found by the vulnerability scan.
 
 ## 2026-11-02: mainnet-only boundary
 
@@ -41,7 +41,7 @@ Official references checked 2026-11-03:
 
 ## 2026-11-03: first interactive market UI
 
-- Bubble Tea, Bubbles, and Lip Gloss provide the TUI runtime and styling. Their current stable release set requires Go 1.24, so CI and the documented local minimum were raised from 1.23 to 1.24.
+- Bubble Tea, Bubbles, and Lip Gloss provide the TUI runtime and styling. The documented Go minimum follows the module directive.
 - The TUI gets data only through `internal/core/market`; CLI wiring injects a runner so no Bubble Tea imports leak outside `internal/tui`.
 - The initial Markets and Symbol screens poll Binance REST every five seconds. Symbol depth is an ordinary REST snapshot and must not be treated as a synchronized local book until Phase 2 implements the documented diff-stream/snapshot procedure.
 - The Dashboard ranks only active stable-quoted symbols for Spot/USDⓈ-M movers and volume, and focuses its watch panel on major contracts; COIN-M uses active contracts. Sparkline history is fetched as 24 hourly klines at launch/market switch. Best bid/ask comes from the dedicated book-ticker endpoint, not fields that may be absent from bulk 24-hour ticker responses.
