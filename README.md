@@ -18,6 +18,41 @@ See [SECURITY.md](docs/SECURITY.md) for the threat model and [RELEASING.md](docs
 
 When a release is published, download the archive for your operating system and CPU architecture from the repository's **GitHub Releases** page. Extract it, then place `bnx` (or `bnx.exe` on Windows) somewhere on your `PATH`. Verify the archive with `checksums.txt` before use. Release assets include Linux, macOS, and Windows builds for amd64 and arm64.
 
+On Linux or macOS, this `curl` installer detects the OS and architecture, downloads the latest release, verifies its SHA-256 checksum, and installs the binary under `~/.local/bin`:
+
+```sh
+set -eu
+REPO="talha-shah2031/BNX"
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+ARCH="$(uname -m)"
+case "$OS" in
+  linux|darwin) ;;
+  *) echo "Unsupported OS: $OS" >&2; exit 1 ;;
+esac
+case "$ARCH" in
+  x86_64|amd64) ARCH=amd64 ;;
+  aarch64|arm64) ARCH=arm64 ;;
+  *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
+esac
+TAG="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
+if [ -z "$TAG" ]; then echo "No published BNX release found" >&2; exit 1; fi
+VERSION="${TAG#v}"
+ARCHIVE="bnx_${VERSION}_${OS}_${ARCH}.tar.gz"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+BASE="https://github.com/$REPO/releases/download/$TAG"
+curl -fsSL "$BASE/$ARCHIVE" -o "$TMP/$ARCHIVE"
+curl -fsSL "$BASE/checksums.txt" -o "$TMP/checksums.txt"
+grep -F "  $ARCHIVE" "$TMP/checksums.txt" > "$TMP/checksum.txt"
+(cd "$TMP" && if command -v sha256sum >/dev/null 2>&1; then sha256sum -c checksum.txt; else shasum -a 256 -c checksum.txt; fi)
+tar -xzf "$TMP/$ARCHIVE" -C "$TMP"
+mkdir -p "$HOME/.local/bin"
+install -m 0755 "$TMP/bnx" "$HOME/.local/bin/bnx"
+echo "Installed at $HOME/.local/bin/bnx; ensure ~/.local/bin is on your PATH."
+```
+
+This installer requires `curl`, `tar`, and either `sha256sum` or `shasum`. Releases are created from version tags; if no release has been published yet, use the source build below.
+
 ### Build from source
 
 Requires Go 1.24 or newer. From the repository root:
