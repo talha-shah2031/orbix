@@ -5,7 +5,7 @@ COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
-.PHONY: build run test lint bench vuln verify release-snapshot
+.PHONY: build run test lint bench vuln verify
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) $(PACKAGE)
@@ -28,6 +28,3 @@ vuln:
 
 verify:
 	go mod verify
-
-release-snapshot:
-	goreleaser release --snapshot --clean

@@ -10,47 +10,26 @@
 - Credentials use the operating system keychain, with `BNX_API_KEY` and `BNX_API_SECRET` environment variables as fallback.
 - No telemetry phone-home. Network calls go to Binance endpoints only.
 
-See [SECURITY.md](docs/SECURITY.md) for the threat model and [RELEASING.md](docs/RELEASING.md) for maintainers preparing a release.
+See [SECURITY.md](docs/SECURITY.md) for the threat model and key setup guidance.
 
 ## Install
 
-### Download a release
+### Download the Windows executable
 
-When a release is published, download the Windows archive for your CPU architecture (`amd64` or `arm64`) from the repository's **GitHub Releases** page. Verify it against `checksums.txt` before extracting. Releases currently provide Windows builds only.
-
-In Windows PowerShell, this `curl.exe` installer detects the CPU architecture, downloads the latest Windows release, verifies its SHA-256 checksum, and installs `bnx.exe` under your local programs directory:
+Each version tag creates a GitHub Release with one downloadable Windows x64 executable, `bnx.exe`. After a release is available, install it from PowerShell with:
 
 ```powershell
-$ErrorActionPreference = 'Stop'
-$repo = 'talha-shah2031/BNX'
-$arch = if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'arm64' } else { 'amd64' }
-$release = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest"
-$version = $release.tag_name.TrimStart('v')
-$archive = "bnx_${version}_windows_${arch}.zip"
-$base = "https://github.com/$repo/releases/download/$($release.tag_name)"
-$tmp = Join-Path $env:TEMP ([guid]::NewGuid().ToString())
 $installDir = Join-Path $env:LOCALAPPDATA 'Programs\bnx'
-New-Item -ItemType Directory -Force $tmp, $installDir | Out-Null
-try {
-    curl.exe -fL "$base/$archive" -o (Join-Path $tmp $archive)
-    curl.exe -fL "$base/checksums.txt" -o (Join-Path $tmp 'checksums.txt')
-    $expected = ((Select-String -Path (Join-Path $tmp 'checksums.txt') -Pattern ([regex]::Escape($archive))).Line -split '\s+')[0]
-    $actual = (Get-FileHash (Join-Path $tmp $archive) -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actual -ne $expected.ToLowerInvariant()) { throw 'Checksum verification failed.' }
-    Expand-Archive -Path (Join-Path $tmp $archive) -DestinationPath $tmp
-    Copy-Item (Join-Path $tmp 'bnx.exe') (Join-Path $installDir 'bnx.exe') -Force
-    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-    if (($userPath -split ';') -notcontains $installDir) {
-        [Environment]::SetEnvironmentVariable('Path', "$userPath;$installDir", 'User')
-    }
-    Write-Host "Installed to $installDir. Open a new terminal and run: bnx"
+New-Item -ItemType Directory -Force $installDir | Out-Null
+curl.exe -fL 'https://github.com/talha-shah2031/BNX/releases/latest/download/bnx.exe' -o (Join-Path $installDir 'bnx.exe')
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+if (($userPath -split ';') -notcontains $installDir) {
+    [Environment]::SetEnvironmentVariable('Path', "$userPath;$installDir", 'User')
 }
-finally {
-    Remove-Item $tmp -Recurse -Force
-}
+Write-Host "Installed to $installDir. Open a new terminal and run: bnx"
 ```
 
-If no release has been published yet, build from source using the instructions below. You can also download the Windows ZIP manually, verify its SHA-256 value from `checksums.txt`, and extract `bnx.exe`.
+If no release has been published yet, build from source using the instructions below.
 
 ### Build from source
 
@@ -138,4 +117,4 @@ go vet ./...
 golangci-lint run ./...
 ```
 
-See [ARCHITECTURE.md](docs/ARCHITECTURE.md), [DECISIONS.md](docs/DECISIONS.md), and [CONTRIBUTING.md](docs/CONTRIBUTING.md). CI runs checks on Linux, macOS, and Windows. Release builds are prepared from version tags; see [RELEASING.md](docs/RELEASING.md). No release is published by these local setup instructions.
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md), [DECISIONS.md](docs/DECISIONS.md), and [CONTRIBUTING.md](docs/CONTRIBUTING.md). CI runs checks on Linux, macOS, and Windows. Pushing a version tag such as `v0.1.0` triggers the single workflow at `.github/workflows/release.yml`, which publishes `bnx.exe`.
