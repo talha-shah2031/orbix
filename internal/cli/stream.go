@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	marketdata "github.com/bubblenexus/bnx/internal/core/market"
+	marketdata "github.com/talha-shah2031/orbix/internal/core/market"
 	"github.com/spf13/cobra"
 )
 

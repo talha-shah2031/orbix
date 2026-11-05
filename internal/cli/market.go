@@ -5,9 +5,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/bubblenexus/bnx/internal/config"
-	marketdata "github.com/bubblenexus/bnx/internal/core/market"
-	"github.com/bubblenexus/bnx/internal/secrets"
+	"github.com/talha-shah2031/orbix/internal/config"
+	marketdata "github.com/talha-shah2031/orbix/internal/core/market"
+	"github.com/talha-shah2031/orbix/internal/secrets"
 	"github.com/spf13/cobra"
 )
 
@@ -178,7 +178,7 @@ func newAuthenticatedMarketService(options *globalOptions) (*marketdata.Service,
 	}
 	credentials, err := (secrets.FallbackStore{Primary: secrets.KeyringStore{}, Fallback: secrets.EnvStore{}}).Get(result.Config.Profile)
 	if err != nil {
-		return nil, "", config.Result{}, fmt.Errorf("no API credentials for profile %q; run `bnx auth login` or set BNX_API_KEY and BNX_API_SECRET", result.Config.Profile)
+		return nil, "", config.Result{}, fmt.Errorf("no API credentials for profile %q; run `orbix auth login` or set ORBIX_API_KEY and ORBIX_API_SECRET", result.Config.Profile)
 	}
 	service, product, loaded, err := newMarketServiceFromConfigWithCredentials(result, credentials.APIKey, credentials.APISecret)
 	return service, product, loaded, err

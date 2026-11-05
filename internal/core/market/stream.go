@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	binancews "github.com/bubblenexus/bnx/internal/binance/ws"
+	binancews "github.com/talha-shah2031/orbix/internal/binance/ws"
 )
 
 type StreamManager = binancews.Manager

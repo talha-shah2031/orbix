@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bubblenexus/bnx/internal/binance/endpoints"
+	"github.com/talha-shah2031/orbix/internal/binance/endpoints"
 )
 
 var ErrEndpointNotAllowed = endpoints.ErrEndpointNotAllowed

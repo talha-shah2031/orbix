@@ -1,8 +1,10 @@
-name: CI
+name: Orbix CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -27,7 +29,7 @@ jobs:
       - run: go mod verify
       - run: go vet ./...
       - run: go test -race ./...
-      - run: go build -trimpath ./cmd/bnx
+      - run: go build -trimpath ./cmd/orbix
 
   lint:
     runs-on: ubuntu-24.04

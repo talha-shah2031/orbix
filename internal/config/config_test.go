@@ -11,7 +11,7 @@ import (
 )
 
 func TestLoadDefaults(t *testing.T) {
-	t.Setenv("BNX_MARKET", "")
+	t.Setenv("ORBIX_MARKET", "")
 	result, err := Load(LoadOptions{ConfigFile: filepath.Join(t.TempDir(), "missing.yaml")})
 	require.NoError(t, err)
 	require.Equal(t, "spot", result.Config.Market)
@@ -23,7 +23,7 @@ func TestPrecedenceFlagEnvFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte("market: coinm\ntimeout: 3s\n"), 0o600))
-	t.Setenv("BNX_MARKET", "usdm")
+	t.Setenv("ORBIX_MARKET", "usdm")
 	result, err := Load(LoadOptions{ConfigFile: path, Market: "options"})
 	require.NoError(t, err)
 	require.Equal(t, "options", result.Config.Market)
@@ -36,7 +36,7 @@ func TestRejectsTestnet(t *testing.T) {
 }
 
 func TestFlagOverridesBaseURLAndConfigSettings(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "bnx.yaml")
+	path := filepath.Join(t.TempDir(), "orbix.yaml")
 	require.NoError(t, os.WriteFile(path, []byte("market: spot\noutput: table\n"), 0o600))
 	result, err := Load(LoadOptions{ConfigFile: path, Profile: "sub1", Market: "usdm", Output: "json", NoColor: true, Timeout: 3 * time.Second, BaseURL: "https://fapi.binance.com", LogLevel: "debug"})
 	require.NoError(t, err)
@@ -76,7 +76,7 @@ func TestConfigValidationAndFilesystemHelpers(t *testing.T) {
 	}
 	defaultPath, err := DefaultPath()
 	require.NoError(t, err)
-	require.Contains(t, defaultPath, "bnx")
+	require.Contains(t, defaultPath, "orbix")
 	missing := filepath.Join(t.TempDir(), "missing.yaml")
 	require.Error(t, CheckPermissions(missing))
 	file := filepath.Join(t.TempDir(), "config.yaml")

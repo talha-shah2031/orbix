@@ -5,6 +5,7 @@ The TUI contains one tab: **Spot Market**. The market list is filtered by the se
 | Key | Action |
 |---|---|
 | `1` | Return to Spot Market |
+| `e` | Cycle Binance, WEEX, and MEXC ticker heatmaps |
 | `q` / `Q` | Cycle USDT, BTC, USDC, and ETH quote pairs |
 | `[` / `]` | Previous / next 100-pair volume range |
 | `j` / `k` | Scroll rows in compact grid mode |

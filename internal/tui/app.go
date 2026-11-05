@@ -10,20 +10,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubblenexus/bnx/internal/binance/models"
-	marketdata "github.com/bubblenexus/bnx/internal/core/market"
-	"github.com/bubblenexus/bnx/internal/store"
-	"github.com/bubblenexus/bnx/internal/tui/components"
-	"github.com/bubblenexus/bnx/internal/tui/theme"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/shopspring/decimal"
+	"github.com/talha-shah2031/orbix/internal/binance/models"
+	marketdata "github.com/talha-shah2031/orbix/internal/core/market"
+	"github.com/talha-shah2031/orbix/internal/store"
+	"github.com/talha-shah2031/orbix/internal/tui/components"
+	"github.com/talha-shah2031/orbix/internal/tui/theme"
 )
 
 type Service interface {
 	Ticker(context.Context, marketdata.Product, string, string) ([]models.Ticker24h, error)
+	SpotTickers(context.Context, marketdata.SpotExchange) ([]models.Ticker24h, error)
 	BookTickers(context.Context, marketdata.Product) ([]models.BookTicker, error)
 	ExchangeInfo(context.Context, marketdata.Product, string) (models.ExchangeInfo, error)
 	Klines(context.Context, marketdata.Product, string, string, int, int64, int64) ([]models.Kline, error)
@@ -63,6 +64,7 @@ type Model struct {
 	spotMode     components.HeatmapMode
 	spotGridTop  int
 	spotQuote    string
+	spotExchange marketdata.SpotExchange
 	spotPage     int
 	symbol       string
 	interval     int
@@ -104,6 +106,7 @@ type Model struct {
 
 type marketDataMsg struct {
 	product     marketdata.Product
+	exchange    marketdata.SpotExchange
 	tickers     []models.Ticker24h
 	bookTickers []models.BookTicker
 	symbols     []models.SymbolInfo
@@ -164,7 +167,7 @@ func NewWithStore(ctx context.Context, service Service, product marketdata.Produ
 	loader := spinner.New(spinner.WithSpinner(spinner.Line))
 	return &Model{ctx: ctx, service: service, local: local, profile: profile, product: product, view: SpotMarket, symbol: strings.ToUpper(symbol), search: strings.ToUpper(symbol), interval: 3, loader: loader,
 		favorites: make(map[string]bool), tickers: make(map[string]models.Ticker24h), bookTickers: make(map[string]models.BookTicker),
-		sparklines: make(map[string][]models.Kline), loading: true, width: 80, height: 24, spotQuote: "USDT"}
+		sparklines: make(map[string][]models.Kline), loading: true, width: 80, height: 24, spotQuote: "USDT", spotExchange: marketdata.SpotExchangeBinance}
 }
 
 func Run(ctx context.Context, service Service, product marketdata.Product, symbol string, input io.Reader, output io.Writer) error {
@@ -212,7 +215,7 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
 	case marketDataMsg:
-		if msg.product != m.product {
+		if msg.product != m.product || msg.exchange != "" && msg.exchange != m.spotExchange {
 			return m, nil
 		}
 		m.loading = false
@@ -461,6 +464,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cycleSpotQuote()
 			return m, nil
 		}
+	case "e":
+		if m.view == SpotMarket {
+			return m, m.cycleSpotExchange()
+		}
 		if msg.String() == "Q" {
 			m.quoteIndex = (m.quoteIndex + 1) % len(quoteFilters)
 			m.filterRows()
@@ -513,7 +520,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) View() string {
 	if m.width < 1 {
-		return "Starting bnx…"
+		return "Starting orbix…"
 	}
 	contentHeight := max(4, m.height-7)
 	spotBodyHeight := max(1, m.height-lipgloss.Height(m.header())-1)
@@ -609,7 +616,7 @@ func (m *Model) selectView(view View) tea.Cmd {
 
 func (m *Model) header() string {
 	return lipgloss.JoinVertical(lipgloss.Left,
-		theme.Title(m.palette()).Render("BNX  ·  BINANCE MAINNET  ·  "+theme.Names[m.themeIndex]),
+		theme.Title(m.palette()).Render("ORBIX  ·  "+m.spotExchange.String()+" SPOT  ·  "+theme.Names[m.themeIndex]),
 		lipgloss.NewStyle().Padding(0, 1).Bold(true).Foreground(m.palette().Accent).Underline(true).Render("1 Spot Market"),
 	)
 }
@@ -645,7 +652,7 @@ func (m *Model) statusLine() string {
 
 func (m *Model) spotStatusFooter(bodyHeight int) string {
 	var parts []string
-	controls := "q quote · [ ] range · r refresh · t theme · ctrl+c/q quit"
+	controls := "e exchange · q quote · [ ] range · r refresh · t theme · ctrl+c/q quit"
 	if components.UsesHeatmapGrid(m.width, m.height, m.spotMode) {
 		headerLines := 1
 		if m.search != "" {
@@ -657,7 +664,7 @@ func (m *Model) spotStatusFooter(bodyHeight int) string {
 		heatmapHeight := max(1, bodyHeight-headerLines)
 		gridStatus := components.HeatmapGridStatus(len(m.spotMarketTiles()), m.width, heatmapHeight, m.spotGridTop)
 		parts = append(parts, gridStatus)
-		controls = "q quote · [ ] page · r refresh · t theme · ^C quit"
+		controls = "e exchange · q quote · [ ] page · r refresh · t theme · ^C quit"
 	}
 	if m.lastError != "" {
 		parts = append(parts, "error: "+m.lastError)
@@ -669,7 +676,7 @@ func (m *Model) spotStatusFooter(bodyHeight int) string {
 func (m *Model) footer() string {
 	text := "1-9 views  j/k move  / search  s sort  f favorite  F favorites  Q quote  t theme  m market  r refresh  ? help  ctrl+c/q quit"
 	if m.view == SpotMarket {
-		text = "q quote  [ ] range  r refresh  t theme  ctrl+c/q quit"
+		text = "e exchange  q quote  [ ] range  r refresh  t theme  ctrl+c/q quit"
 	}
 	if m.searching {
 		text = "Search: " + m.search + "_  ·  enter accept  esc cancel"
@@ -703,7 +710,7 @@ func (m *Model) diagnosticsView() string {
 		"Local storage: " + storage,
 		"Last request error: " + lastError,
 		"Logs are redacted and written to the configured log file.",
-		"Export diagnostics: bnx diagnostics --file bnx-diagnostics.zip",
+		"Export diagnostics: orbix diagnostics --file orbix-diagnostics.zip",
 	}
 	return roundedPanel("DIAGNOSTICS  ·  LIVE STATUS", strings.Join(lines, "\n"), m.width-4, m.palette())
 }
@@ -884,7 +891,7 @@ func (m *Model) spotMarketView(height int) string {
 	}
 	headerLines := 1
 	counts := m.spotMarketChangeCounts()
-	left := fmt.Sprintf("QUOTE %s  ·  VOLUME RANK  ·  PAIRS %d-%d/%d  ·  %s", m.spotQuote, min(start+1, total), end, total, modeDescription)
+	left := fmt.Sprintf("EXCHANGE %s  ·  QUOTE %s  ·  VOLUME RANK  ·  PAIRS %d-%d/%d  ·  %s", m.spotExchangeChoices(), m.spotQuote, min(start+1, total), end, total, modeDescription)
 	stats := lipgloss.JoinHorizontal(lipgloss.Top,
 		lipgloss.NewStyle().Foreground(m.palette().HeatPositiveStrong).Bold(true).Render(fmt.Sprintf("+ %d GAIN", counts.gain)),
 		"  ",
@@ -911,11 +918,11 @@ func (m *Model) spotMarketView(height int) string {
 		switch {
 		case m.loading:
 			spinnerView := lipgloss.NewStyle().Foreground(m.palette().Accent).Bold(true).Render(m.loader.View())
-			output.WriteString("\n\n  " + spinnerView + " Fetching Binance Spot market data…")
+			output.WriteString("\n\n  " + spinnerView + " Fetching " + m.spotExchange.String() + " Spot market data…")
 		case m.lastError != "":
 			output.WriteString("\n  Spot data unavailable: " + m.lastError)
 		default:
-			output.WriteString("\n  No " + m.spotQuote + " Spot pairs are available in the current Binance response.")
+			output.WriteString("\n  No " + m.spotQuote + " Spot pairs are available in the current " + m.spotExchange.String() + " response.")
 		}
 		return output.String()
 	}
@@ -1041,6 +1048,45 @@ func (m *Model) cycleSpotQuote() {
 	}
 	m.spotQuote = quotes[(current+1)%len(quotes)]
 	m.spotPage, m.spotGridTop = 0, 0
+}
+
+func (m *Model) cycleSpotExchange() tea.Cmd {
+	exchanges := [...]marketdata.SpotExchange{
+		marketdata.SpotExchangeBinance,
+		marketdata.SpotExchangeWEEX,
+		marketdata.SpotExchangeMEXC,
+	}
+	current := 0
+	for index, exchange := range exchanges {
+		if exchange == m.spotExchange {
+			current = index
+			break
+		}
+	}
+	m.spotExchange = exchanges[(current+1)%len(exchanges)]
+	m.spotPage, m.spotGridTop = 0, 0
+	m.tickers = make(map[string]models.Ticker24h)
+	m.loading = true
+	m.lastError = ""
+	m.lastUpdate = time.Time{}
+	return m.loadMarket()
+}
+
+func (m *Model) spotExchangeChoices() string {
+	exchanges := [...]marketdata.SpotExchange{
+		marketdata.SpotExchangeBinance,
+		marketdata.SpotExchangeWEEX,
+		marketdata.SpotExchangeMEXC,
+	}
+	choices := make([]string, 0, len(exchanges))
+	for _, exchange := range exchanges {
+		name := exchange.String()
+		if exchange == m.spotExchange {
+			name = "[" + name + "]"
+		}
+		choices = append(choices, name)
+	}
+	return strings.Join(choices, " ")
 }
 
 func (m *Model) bestPrices(ticker models.Ticker24h) (string, string) {
@@ -1256,7 +1302,7 @@ func (m *Model) alertsView() string {
 	var out strings.Builder
 	out.WriteString("\n  LOCAL PRICE & FUNDING ALERTS\n\n")
 	if len(m.alerts) == 0 {
-		out.WriteString("  No alerts configured. Use: bnx alerts add BTCUSDT above 70000\n")
+		out.WriteString("  No alerts configured. Use: orbix alerts add BTCUSDT above 70000\n")
 	} else {
 		for _, alert := range m.alerts {
 			_, _ = fmt.Fprintf(&out, "  #%-4d %-14s %-16s %s  cooldown %s\n", alert.ID, alert.Symbol, alert.Condition, alert.Target, alert.Cooldown)
@@ -1273,7 +1319,7 @@ func (m *Model) accountView(height int) string {
 		return m.placeholder("Account", "Loading read-only account details…")
 	}
 	if m.accountData.err != nil {
-		return m.placeholder("Account", "Connect a read-only key with `bnx auth login`, then revisit this view.\n\n"+m.accountData.err.Error())
+		return m.placeholder("Account", "Connect a read-only key with `orbix auth login`, then revisit this view.\n\n"+m.accountData.err.Error())
 	}
 	data := m.accountData
 	var out strings.Builder
@@ -1465,6 +1511,7 @@ func waitUserDataEvent(ctx context.Context, events <-chan json.RawMessage) tea.C
 func (m *Model) helpView() string {
 	bindings := []string{
 		"1         Return to Spot Market",
+		"e         Cycle Binance, WEEX, and MEXC heatmaps",
 		"q / Q     Cycle USDT, BTC, USDC, and ETH quote pairs",
 		"[ / ]     Previous / next 100-pair volume range",
 		"j / k     Scroll rows in compact grid mode",
@@ -1478,9 +1525,14 @@ func (m *Model) helpView() string {
 
 func (m *Model) loadMarket() tea.Cmd {
 	ctx, service, product, view := m.ctx, m.service, m.product, m.view
+	exchange := m.spotExchange
 	db := m.local
 	cachedSymbols := append([]models.SymbolInfo(nil), m.symbols...)
 	return func() tea.Msg {
+		if view == SpotMarket {
+			tickers, err := service.SpotTickers(ctx, exchange)
+			return marketDataMsg{product: product, exchange: exchange, tickers: tickers, err: err}
+		}
 		tickers, err := service.Ticker(ctx, product, "", "")
 		if err != nil {
 			return marketDataMsg{product: product, err: err}

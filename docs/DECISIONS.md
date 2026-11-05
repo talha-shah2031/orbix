@@ -2,7 +2,7 @@
 
 ## 2026-11-02: repository and module identity
 
-- The project lives in the `bnx/` subdirectory of the existing checkout and uses module path `github.com/bubblenexus/bnx` until a dedicated upstream repository is assigned.
+- The project lives in the `orbix/` subdirectory of the existing checkout and uses module path `github.com/talha-shah2031/orbix` until a dedicated upstream repository is assigned.
 - The current module directive and CI toolchain are Go 1.27.3, which includes the standard-library security fixes found by the vulnerability scan.
 
 ## 2026-11-02: mainnet-only boundary
@@ -54,7 +54,7 @@ Official dependency release metadata was checked 2026-11-03; Binance REST endpoi
 - Public stream connections use Binance production-only endpoints. Spot tries `stream.binance.com:9443`, `stream.binance.com:443`, then the market-data-only `data-stream.binance.vision`; USDⓈ-M, COIN-M, and Options use their documented production stream base paths.
 - Binance combined streams wrap events as `{stream,data}`. The manager reconnects and restores subscriptions, proactively rotates before the documented 24-hour connection age, shards at 1024 streams, and exposes bounded subscriber queues. Ticker consumers drop oldest; order-book consumers request a resync signal on overflow.
 - The local order book opens depth streaming before taking the REST snapshot, buffers and sorts events, discards stale `u` IDs, finds the bridge event, then enforces the project brief's strict `U == previous_u + 1` continuity requirement. Sequence gaps invalidate the book and trigger a fresh stream/snapshot cycle.
-- `bnx stream` writes combined stream events as NDJSON and uses context cancellation for Ctrl+C. Local verification includes a TLS fake-stream server. The 30-minute external forced-disconnect soak remains an operational acceptance test and was not run in this environment.
+- `orbix stream` writes combined stream events as NDJSON and uses context cancellation for Ctrl+C. Local verification includes a TLS fake-stream server. The 30-minute external forced-disconnect soak remains an operational acceptance test and was not run in this environment.
 
 Official references checked 2026-11-03:
 
@@ -75,7 +75,7 @@ Official reference checked 2026-11-03: <https://developers.binance.com/docs/deri
 
 ## 2026-11-03: authenticated read-only account monitoring
 
-- Account REST calls use signed GET routes registered in the existing endpoint allowlist. Spot account flags expose `canTrade` and `canWithdraw`; the CLI warns on stderr when either is enabled. Credentials are prompted without echo and saved to the OS keychain; `BNX_API_KEY` / `BNX_API_SECRET` remain the documented fallback.
+- Account REST calls use signed GET routes registered in the existing endpoint allowlist. Spot account flags expose `canTrade` and `canWithdraw`; the CLI warns on stderr when either is enabled. Credentials are prompted without echo and saved to the OS keychain; `ORBIX_API_KEY` / `ORBIX_API_SECRET` remain the documented fallback.
 - Futures account events use the current USDⓈ-M and COIN-M WebSocket API `userDataStream.start` and `.ping` methods. The client does not call a REST listen-key lifecycle or any account mutation endpoint.
 - Binance's current Spot user-data WebSocket API subscription documentation requires an Ed25519 session login, while this application's supported credential scheme is the HMAC API-key/secret pair. Spot therefore uses bounded five-second account REST refreshes instead of a misleading or deprecated listen-key subscription. Spot balances, open orders, order history, and trade history remain available via signed GET.
 - Options have public market data only; no account routes are exposed.
@@ -94,5 +94,12 @@ Official references checked 2026-11-03:
 - `config init` writes a secret-free mainnet defaults file with restrictive permissions, and `config show` emits a stable, secret-free summary. The initializer is deliberately noninteractive so it can be used in scripts.
 - The Spot Market heatmap remains Binance-only and derives its rows from `GET /api/v3/ticker/24hr` alone: symbols ending in `USDT` are ranked by `quoteVolume` to select the top 100. Tile area uses absolute `priceChangePercent` (minimum 0.25% before normalization, with each normalized tile capped at 15% of total area); quote volume does not size tiles. Tile color uses the signed change clamped to ±10%. The ticker response does not provide global coin market-cap rankings.
 - The local Windows environment has no CGO compiler, so `go test -race` cannot execute here; the CI matrix remains the race-test authority. A multi-hour WebSocket soak and live authenticated account checks require a separately authorized operational environment and were not performed.
-- Releases are intentionally kept minimal: `.github/workflows/release.yml` builds one Windows amd64 executable and attaches only `bnx.exe` to the GitHub Release for a pushed `v*` tag.
+- Releases are intentionally kept minimal: `.github/workflows/release.yml` builds one Windows amd64 executable and attaches only `orbix.exe` to the GitHub Release for a pushed `v*` tag.
 - Coverage was rechecked after adding service, config, REST, model, order-book synchronization, and WebSocket tests: aggregate `internal/binance` coverage is 81.1%, `internal/core/market` is 82.0%, and `internal/config` is 89.8%. The WebSocket subpackage remains 77.0% individually, while the aggregate Binance target is met.
+
+## 2026-11-05: Multi-exchange Spot heatmap
+
+- The Spot Market heatmap starts on Binance and cycles Binance, WEEX, and MEXC with `e`. All three use the shared quote filter, base-volume ranking, and heatmap renderer.
+- WEEX public ticker data uses `GET https://api-spot.weex.com/api/v3/market/ticker/24hr`. MEXC's supplied `/api/v3/ticker/24h` returned 404; the documented working route is `GET https://api.mexc.com/api/v3/ticker/24hr`.
+- Live ticker fields from WEEX and MEXC express `priceChangePercent` as a ratio (for example, `0.035522` corresponds to about `3.5522%`), so Orbix multiplies that field by 100. Binance already returns percentage points and is unchanged.
+- References: [WEEX Spot ticker docs](https://www.weex.com/api-doc/zh-CN/spot/MarketDataAPI/GetAllTickerInfo), [MEXC Spot API docs](https://mexcdevelop.github.io/apidocs/spot_v3_en/).

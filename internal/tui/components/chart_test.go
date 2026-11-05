@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bubblenexus/bnx/internal/binance/models"
+	"github.com/talha-shah2031/orbix/internal/binance/models"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubblenexus/bnx/internal/config"
-	"github.com/bubblenexus/bnx/internal/store"
+	"github.com/talha-shah2031/orbix/internal/config"
+	"github.com/talha-shah2031/orbix/internal/store"
 	"github.com/spf13/cobra"
 )
 

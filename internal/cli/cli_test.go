@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/bubblenexus/bnx/internal/binance/models"
-	marketdata "github.com/bubblenexus/bnx/internal/core/market"
+	"github.com/talha-shah2031/orbix/internal/binance/models"
+	marketdata "github.com/talha-shah2031/orbix/internal/core/market"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 )
@@ -66,8 +66,8 @@ func TestAuthStatusNeverPrintsSecrets(t *testing.T) {
 	configDir := t.TempDir()
 	t.Setenv("APPDATA", configDir)
 	t.Setenv("LOCALAPPDATA", configDir)
-	t.Setenv("BNX_API_KEY", "public-key-test-value")
-	t.Setenv("BNX_API_SECRET", "private-secret-test-value")
+	t.Setenv("ORBIX_API_KEY", "public-key-test-value")
+	t.Setenv("ORBIX_API_SECRET", "private-secret-test-value")
 	var stdout, stderr bytes.Buffer
 	command := NewRootCommand(BuildInfo{}, &stdout, &stderr)
 	command.SetArgs([]string{"--output", "json", "auth", "status"})
@@ -128,7 +128,7 @@ func TestCompletionCommandGeneratesFishScript(t *testing.T) {
 	command := newCompletionCommand(root, &output)
 	command.SetArgs([]string{"fish"})
 	require.NoError(t, command.Execute())
-	require.Contains(t, output.String(), "complete -c bnx")
+	require.Contains(t, output.String(), "complete -c orbix")
 }
 
 func TestKlineCSVExportUsesNamedColumnsAndDecimalStrings(t *testing.T) {

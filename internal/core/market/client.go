@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/bubblenexus/bnx/internal/binance/endpoints"
-	"github.com/bubblenexus/bnx/internal/binance/rest"
+	"github.com/talha-shah2031/orbix/internal/binance/endpoints"
+	"github.com/talha-shah2031/orbix/internal/binance/rest"
 )
 
 type RESTOptions struct {

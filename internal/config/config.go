@@ -77,7 +77,7 @@ type Result struct {
 func Load(options LoadOptions) (Result, error) {
 	v := viper.New()
 	v.SetConfigType("yaml")
-	v.SetEnvPrefix("BNX")
+	v.SetEnvPrefix("ORBIX")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 	setDefaults(v)
@@ -215,7 +215,7 @@ func DefaultPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve user config directory: %w", err)
 	}
-	return filepath.Join(dir, "bnx", "config.yaml"), nil
+	return filepath.Join(dir, "orbix", "config.yaml"), nil
 }
 
 func CheckPermissions(path string) error {

@@ -107,7 +107,7 @@ func (m *UserDataManager) runConnection(ctx context.Context, events chan<- json.
 		return fmt.Errorf("connect futures user-data WebSocket: %w", err)
 	}
 	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "reconnect") }()
-	start := map[string]any{"id": "bnx-start", "method": "userDataStream.start", "params": map[string]string{"apiKey": m.options.APIKey}}
+	start := map[string]any{"id": "orbix-start", "method": "userDataStream.start", "params": map[string]string{"apiKey": m.options.APIKey}}
 	if err := writeJSON(ctx, conn, start); err != nil {
 		return err
 	}
@@ -123,7 +123,7 @@ func (m *UserDataManager) runConnection(ctx context.Context, events chan<- json.
 		if err := json.Unmarshal(frame, &response); err != nil {
 			return fmt.Errorf("decode user-data start response: %w", err)
 		}
-		if response.ID != "bnx-start" {
+		if response.ID != "orbix-start" {
 			continue
 		}
 		if response.Status != 200 {
@@ -169,7 +169,7 @@ func (m *UserDataManager) runConnection(ctx context.Context, events chan<- json.
 		case err := <-readErr:
 			return err
 		case <-keepalive.C:
-			ping := map[string]any{"id": "bnx-ping", "method": "userDataStream.ping", "params": map[string]string{"apiKey": m.options.APIKey}}
+			ping := map[string]any{"id": "orbix-ping", "method": "userDataStream.ping", "params": map[string]string{"apiKey": m.options.APIKey}}
 			if err := writeJSON(ctx, conn, ping); err != nil {
 				return err
 			}

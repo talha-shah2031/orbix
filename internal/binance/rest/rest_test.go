@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bubblenexus/bnx/internal/binance/endpoints"
-	"github.com/bubblenexus/bnx/internal/binance/models"
+	"github.com/talha-shah2031/orbix/internal/binance/endpoints"
+	"github.com/talha-shah2031/orbix/internal/binance/models"
 	"github.com/stretchr/testify/require"
 )
 

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bubblenexus/bnx/internal/tui/theme"
+	"github.com/talha-shah2031/orbix/internal/tui/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 )

@@ -18,7 +18,7 @@ func newVersionCommand(build BuildInfo, output io.Writer) *cobra.Command {
 			if format == "json" {
 				return json.NewEncoder(output).Encode(map[string]string{"version": build.Version, "commit": build.Commit, "date": build.Date})
 			}
-			_, err := fmt.Fprintf(output, "bnx %s (commit %s, built %s)\n", build.Version, build.Commit, build.Date)
+			_, err := fmt.Fprintf(output, "orbix %s (commit %s, built %s)\n", build.Version, build.Commit, build.Date)
 			return err
 		},
 	}

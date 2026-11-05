@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bubblenexus/bnx/internal/binance/models"
+	"github.com/talha-shah2031/orbix/internal/binance/models"
 	"github.com/shopspring/decimal"
 )
 
 func TestWatchlistAlertsAndCooldownPersist(t *testing.T) {
 	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "bnx.sqlite")
+	path := filepath.Join(t.TempDir(), "orbix.sqlite")
 	s, err := Open(path)
 	if err != nil {
 		t.Fatal(err)

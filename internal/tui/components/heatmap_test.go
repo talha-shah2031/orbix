@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bubblenexus/bnx/internal/tui/theme"
+	"github.com/talha-shah2031/orbix/internal/tui/theme"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 )

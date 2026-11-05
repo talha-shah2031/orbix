@@ -6,10 +6,10 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/bubblenexus/bnx/internal/cli"
-	marketdata "github.com/bubblenexus/bnx/internal/core/market"
-	"github.com/bubblenexus/bnx/internal/secrets"
-	"github.com/bubblenexus/bnx/internal/tui"
+	"github.com/talha-shah2031/orbix/internal/cli"
+	marketdata "github.com/talha-shah2031/orbix/internal/core/market"
+	"github.com/talha-shah2031/orbix/internal/secrets"
+	"github.com/talha-shah2031/orbix/internal/tui"
 )
 
 var (

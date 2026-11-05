@@ -6,18 +6,21 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bubblenexus/bnx/internal/binance/models"
-	marketdata "github.com/bubblenexus/bnx/internal/core/market"
-	"github.com/bubblenexus/bnx/internal/tui/components"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
+	"github.com/talha-shah2031/orbix/internal/binance/models"
+	marketdata "github.com/talha-shah2031/orbix/internal/core/market"
+	"github.com/talha-shah2031/orbix/internal/tui/components"
 )
 
 type fakeService struct{}
 
 func (fakeService) Ticker(context.Context, marketdata.Product, string, string) ([]models.Ticker24h, error) {
+	return nil, nil
+}
+func (fakeService) SpotTickers(context.Context, marketdata.SpotExchange) ([]models.Ticker24h, error) {
 	return nil, nil
 }
 func (fakeService) BookTickers(context.Context, marketdata.Product) ([]models.BookTicker, error) {

@@ -7,7 +7,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/bubblenexus/bnx/internal/binance/models"
+	"github.com/talha-shah2031/orbix/internal/binance/models"
 	"github.com/shopspring/decimal"
 )
 

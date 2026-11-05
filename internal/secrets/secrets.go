@@ -8,7 +8,7 @@ import (
 	"github.com/zalando/go-keyring"
 )
 
-const service = "bnx"
+const service = "orbix"
 
 var ErrNotFound = errors.New("secret not found")
 
@@ -95,7 +95,7 @@ func (KeyringStore) Delete(profile string) error {
 type EnvStore struct{}
 
 func (EnvStore) Get(string) (Credentials, error) {
-	credentials := Credentials{APIKey: os.Getenv("BNX_API_KEY"), APISecret: os.Getenv("BNX_API_SECRET")}
+	credentials := Credentials{APIKey: os.Getenv("ORBIX_API_KEY"), APISecret: os.Getenv("ORBIX_API_SECRET")}
 	if credentials.APIKey == "" || credentials.APISecret == "" {
 		return Credentials{}, ErrNotFound
 	}

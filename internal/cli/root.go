@@ -9,9 +9,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/bubblenexus/bnx/internal/config"
-	marketdata "github.com/bubblenexus/bnx/internal/core/market"
-	"github.com/bubblenexus/bnx/internal/logging"
+	"github.com/talha-shah2031/orbix/internal/config"
+	marketdata "github.com/talha-shah2031/orbix/internal/core/market"
+	"github.com/talha-shah2031/orbix/internal/logging"
 	"github.com/spf13/cobra"
 )
 
@@ -71,9 +71,9 @@ func NewRootCommand(build BuildInfo, stdout, stderr io.Writer, tuiRunner ...TUIR
 		runTUI = tuiRunner[0]
 	}
 	root := &cobra.Command{
-		Use:           "bnx",
+		Use:           "orbix",
 		Short:         "Read-only Binance terminal",
-		Long:          "bnx is a mainnet-only, read-only Binance terminal and command-line client.",
+		Long:          "orbix is a mainnet-only, read-only Binance terminal and command-line client.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {

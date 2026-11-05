@@ -60,7 +60,7 @@ func DefaultPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "bnx", "bnx.sqlite"), nil
+	return filepath.Join(dir, "orbix", "orbix.sqlite"), nil
 }
 func (s *Store) Close() error { return s.db.Close() }
 

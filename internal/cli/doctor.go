@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bubblenexus/bnx/internal/config"
-	"github.com/bubblenexus/bnx/internal/secrets"
+	"github.com/talha-shah2031/orbix/internal/config"
+	"github.com/talha-shah2031/orbix/internal/secrets"
 	"github.com/spf13/cobra"
 )
 

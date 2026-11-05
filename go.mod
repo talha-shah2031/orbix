@@ -1,4 +1,4 @@
-module github.com/bubblenexus/bnx
+module github.com/talha-shah2031/orbix
 
 go 1.27.3
 

@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/bubblenexus/bnx/internal/secrets"
+	"github.com/talha-shah2031/orbix/internal/secrets"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -135,10 +135,10 @@ func newAuthCommand(options *globalOptions, stdout, stderr io.Writer) *cobra.Com
 		}
 		credentials, err := (secrets.FallbackStore{Primary: secrets.KeyringStore{}, Fallback: secrets.EnvStore{}}).Get(cfg.Config.Profile)
 		if err != nil {
-			return emit(stdout, cfg.Config.Output, map[string]any{"profile": cfg.Config.Profile, "available": false, "setup": "bnx auth login"}, nil)
+			return emit(stdout, cfg.Config.Output, map[string]any{"profile": cfg.Config.Profile, "available": false, "setup": "orbix auth login"}, nil)
 		}
 		source := "keychain"
-		if credentials.APIKey == getEnv("BNX_API_KEY") {
+		if credentials.APIKey == getEnv("ORBIX_API_KEY") {
 			source = "environment"
 		}
 		return emit(stdout, cfg.Config.Output, map[string]any{"profile": cfg.Config.Profile, "available": true, "source": source, "secretMasked": true}, nil)

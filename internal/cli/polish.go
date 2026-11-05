@@ -10,9 +10,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/bubblenexus/bnx/internal/binance/models"
-	"github.com/bubblenexus/bnx/internal/config"
-	"github.com/bubblenexus/bnx/internal/logging"
+	"github.com/talha-shah2031/orbix/internal/binance/models"
+	"github.com/talha-shah2031/orbix/internal/config"
+	"github.com/talha-shah2031/orbix/internal/logging"
 	"github.com/spf13/cobra"
 )
 
@@ -69,7 +69,7 @@ func klineExportRows(values []models.Kline) []map[string]any {
 
 func newDiagnosticsCommand(options *globalOptions, stdout io.Writer) *cobra.Command {
 	command := &cobra.Command{Use: "diagnostics", Short: "Create a redacted diagnostics bundle", Args: cobra.NoArgs}
-	command.Flags().String("file", "bnx-diagnostics.zip", "output ZIP path")
+	command.Flags().String("file", "orbix-diagnostics.zip", "output ZIP path")
 	command.RunE = func(cmd *cobra.Command, _ []string) error {
 		result, err := loadConfig(options)
 		if err != nil {
@@ -207,7 +207,7 @@ func newConfigCommand(options *globalOptions, stdout io.Writer) *cobra.Command {
 		if result.Config.Output == "json" {
 			return emit(stdout, "json", map[string]any{"path": path, "created": true}, nil)
 		}
-		_, err = fmt.Fprintf(stdout, "Created %s with mode 0600. Edit it to customize BNX; credentials are stored separately.\n", path)
+		_, err = fmt.Fprintf(stdout, "Created %s with mode 0600. Edit it to customize ORBIX; credentials are stored separately.\n", path)
 		return err
 	}})
 	return command

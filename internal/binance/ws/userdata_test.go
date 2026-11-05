@@ -38,7 +38,7 @@ func TestUserDataManagerStartsReadOnlySubscriptionAndDeliversEvents(t *testing.T
 		if start.Method != "userDataStream.start" || start.Params.APIKey != "test-key" {
 			t.Errorf("unexpected start request: %+v", start)
 		}
-		if err := connection.Write(request.Context(), websocket.MessageText, []byte(`{"id":"bnx-start","status":200,"result":{"listenKey":"opaque"}}`)); err != nil {
+		if err := connection.Write(request.Context(), websocket.MessageText, []byte(`{"id":"orbix-start","status":200,"result":{"listenKey":"opaque"}}`)); err != nil {
 			return
 		}
 		_ = connection.Write(request.Context(), websocket.MessageText, []byte(`{"e":"ACCOUNT_UPDATE","E":123}`))

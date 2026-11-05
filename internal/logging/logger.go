@@ -14,7 +14,7 @@ func New(path string, level slog.Level) (*slog.Logger, io.Closer, error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("resolve cache directory: %w", err)
 		}
-		path = filepath.Join(dir, "bnx", "bnx.log")
+		path = filepath.Join(dir, "orbix", "orbix.log")
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, nil, fmt.Errorf("create log directory: %w", err)

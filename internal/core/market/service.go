@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/bubblenexus/bnx/internal/binance/models"
+	"github.com/talha-shah2031/orbix/internal/binance/models"
 )
 
 type Product string
@@ -27,9 +28,28 @@ type REST interface {
 	ClockOffset() time.Duration
 }
 
-type Service struct{ client REST }
+// HTTPDoer is the small HTTP client contract used for public exchange feeds.
+type HTTPDoer interface {
+	Do(*http.Request) (*http.Response, error)
+}
 
-func New(client REST) *Service { return &Service{client: client} }
+type Service struct {
+	client     REST
+	httpClient HTTPDoer
+}
+
+// New creates a market service with a bounded timeout for public exchange feeds.
+func New(client REST) *Service {
+	return NewWithHTTPClient(client, &http.Client{Timeout: 10 * time.Second})
+}
+
+// NewWithHTTPClient creates a market service with an injectable HTTP client.
+func NewWithHTTPClient(client REST, httpClient HTTPDoer) *Service {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 10 * time.Second}
+	}
+	return &Service{client: client, httpClient: httpClient}
+}
 
 type TimeReport struct {
 	ServerTime    int64 `json:"serverTime"`
