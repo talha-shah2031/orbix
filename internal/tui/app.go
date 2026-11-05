@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/bubblenexus/bnx/internal/store"
 	"github.com/bubblenexus/bnx/internal/tui/components"
 	"github.com/bubblenexus/bnx/internal/tui/theme"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -45,7 +45,7 @@ const (
 	SpotMarket
 )
 
-var viewNames = [...]string{"Dashboard", "Markets", "Symbol", "Futures", "Account", "Alerts", "Logs", "Help", "Spot Market"}
+var viewNames = [...]string{"Spot Market"}
 var products = [...]marketdata.Product{marketdata.Spot, marketdata.USDM, marketdata.COINM, marketdata.Options}
 var intervals = [...]string{"1m", "5m", "15m", "1h", "4h", "1d", "1w", "1M"}
 var quoteFilters = [...]string{"ALL", "USDT", "USDC", "BTC", "FDUSD", "BNB"}
@@ -71,6 +71,7 @@ type Model struct {
 	selected     int
 	search       string
 	searching    bool
+	loader       spinner.Model
 	paletteOpen  bool
 	paletteQuery string
 	quoteIndex   int
@@ -156,14 +157,12 @@ func NewWithStore(ctx context.Context, service Service, product marketdata.Produ
 	if product == "" {
 		product = marketdata.Spot
 	}
-	view := Dashboard
-	if symbol != "" {
-		view = Symbol
-	}
+	product = marketdata.Spot
 	if profile == "" {
 		profile = "main"
 	}
-	return &Model{ctx: ctx, service: service, local: local, profile: profile, product: product, view: view, symbol: strings.ToUpper(symbol), interval: 3,
+	loader := spinner.New(spinner.WithSpinner(spinner.Line))
+	return &Model{ctx: ctx, service: service, local: local, profile: profile, product: product, view: SpotMarket, symbol: strings.ToUpper(symbol), search: strings.ToUpper(symbol), interval: 3, loader: loader,
 		favorites: make(map[string]bool), tickers: make(map[string]models.Ticker24h), bookTickers: make(map[string]models.BookTicker),
 		sparklines: make(map[string][]models.Kline), loading: true, width: 80, height: 24, spotQuote: "USDT"}
 }
@@ -197,18 +196,18 @@ func RunProfileWithUserData(ctx context.Context, service Service, product market
 }
 
 func (m *Model) Init() tea.Cmd {
-	commands := []tea.Cmd{m.loadMarket(), m.loadSparklines(), refreshAfter(5 * time.Second)}
-	if m.local != nil {
-		commands = append(commands, m.loadLocalData())
-	}
-	if m.userEvents != nil {
-		commands = append(commands, waitUserDataEvent(m.ctx, m.userEvents))
-	}
-	return tea.Batch(commands...)
+	return tea.Batch(m.loadMarket(), refreshAfter(5*time.Second), m.loader.Tick)
 }
 
 func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := message.(type) {
+	case spinner.TickMsg:
+		if !m.loading {
+			return m, nil
+		}
+		var command tea.Cmd
+		m.loader, command = m.loader.Update(msg)
+		return m, command
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, nil
@@ -339,19 +338,10 @@ func (m *Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if m.view == Account {
 			commands = append(commands, m.loadAccount())
 		}
-		if m.local != nil {
-			commands = append(commands, m.evaluateAlerts())
-		}
 		return m, tea.Batch(commands...)
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && msg.Y <= 2 {
-			row := max(0, msg.Y-1)
-			start := row * 4
-			count := min(4, len(viewNames)-start)
-			index := start + min(count-1, msg.X/max(1, m.width/count))
-			if index >= 0 && index < len(viewNames) {
-				return m, m.selectView(View(index))
-			}
+			return m, m.selectView(SpotMarket)
 		}
 		return m, nil
 	case tea.KeyMsg:
@@ -400,12 +390,10 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	switch msg.String() {
-	case "1", "2", "3", "4", "5", "6", "7", "8", "9":
-		return m, m.selectView(View(msg.String()[0] - '1'))
-	case "?":
-		m.view = Help
-	case "ctrl+p", ":":
-		m.paletteOpen, m.paletteQuery = true, ""
+	case "1":
+		return m, m.selectView(SpotMarket)
+	case "2", "3", "4", "5", "6", "7", "8", "9", "?", "ctrl+p", ":":
+		return m, nil
 	case "esc":
 		switch {
 		case m.view == Symbol:
@@ -413,8 +401,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case m.search != "":
 			m.search = ""
 			m.filterRows()
-		default:
-			m.view = Dashboard
 		}
 	case "/":
 		m.searching = true
@@ -468,11 +454,6 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterRows()
 	case "t":
 		m.themeIndex = (m.themeIndex + 1) % len(theme.Names)
-	case "v":
-		if m.view == SpotMarket {
-			m.spotMode = (m.spotMode + 1) % 3
-			m.spotGridTop = 0
-		}
 	case "a":
 		m.indicators = !m.indicators
 	case "q", "Q":
@@ -535,7 +516,7 @@ func (m *Model) View() string {
 		return "Starting bnx…"
 	}
 	contentHeight := max(4, m.height-7)
-	spotBodyHeight := max(1, m.height-lipgloss.Height(m.header())-lipgloss.Height(m.statusBar())-lipgloss.Height(m.footer()))
+	spotBodyHeight := max(1, m.height-lipgloss.Height(m.header())-1)
 	var body string
 	switch m.view {
 	case Dashboard:
@@ -558,6 +539,9 @@ func (m *Model) View() string {
 		body = m.spotMarketView(spotBodyHeight)
 	}
 	joined := lipgloss.JoinVertical(lipgloss.Left, m.header(), body, m.statusBar(), m.footer())
+	if m.view == SpotMarket {
+		joined = lipgloss.JoinVertical(lipgloss.Left, m.header(), body, m.spotStatusFooter(spotBodyHeight))
+	}
 	if m.paletteOpen {
 		joined = lipgloss.JoinVertical(lipgloss.Left, m.header(), m.paletteView(), m.statusBar(), m.footer())
 	}
@@ -597,25 +581,19 @@ func (m *Model) paletteView() string {
 
 func (m *Model) choosePaletteAction() tea.Cmd {
 	query := strings.ToLower(strings.TrimSpace(m.paletteQuery))
-	for i, name := range viewNames {
-		if query == "" || strings.Contains(strings.ToLower(name), query) || query == strconv.Itoa(i+1) || query == strings.ToLower("open "+name) {
-			m.paletteOpen, m.paletteQuery = false, ""
-			return m.selectView(View(i))
-		}
-	}
-	for _, symbol := range m.rows {
-		if query == "" || strings.Contains(strings.ToLower(symbol.Symbol), query) || query == strings.ToLower("open symbol "+symbol.Symbol) {
-			m.symbol, m.view = symbol.Symbol, Symbol
-			m.paletteOpen, m.paletteQuery = false, ""
-			return m.loadDetail()
-		}
+	m.paletteOpen, m.paletteQuery = false, ""
+	if query == "9" || query == "spot market" || query == "open spot market" {
+		return m.selectView(SpotMarket)
 	}
 	return nil
 }
 
 func (m *Model) selectView(view View) tea.Cmd {
-	m.view = view
-	if view == SpotMarket && m.product != marketdata.Spot {
+	if view != SpotMarket {
+		return nil
+	}
+	m.view = SpotMarket
+	if m.product != marketdata.Spot {
 		m.product = marketdata.Spot
 		m.loading = true
 		m.lastError = ""
@@ -626,39 +604,21 @@ func (m *Model) selectView(view View) tea.Cmd {
 		m.sparklines = make(map[string][]models.Kline)
 		return m.loadMarket()
 	}
-	switch view {
-	case Symbol:
-		if m.symbol != "" {
-			return m.loadDetail()
-		}
-	case Futures:
-		return m.loadFutures()
-	case Account:
-		return m.loadAccount()
-	case Dashboard, Markets, Alerts, Logs, Help, SpotMarket:
-		return nil
-	}
 	return nil
 }
 
 func (m *Model) header() string {
-	items := make([]string, len(viewNames))
-	for index, name := range viewNames {
-		label := fmt.Sprintf("%d %s", index+1, name)
-		style := lipgloss.NewStyle().Padding(0, 1).Foreground(m.palette().Muted)
-		if View(index) == m.view {
-			style = style.Bold(true).Foreground(m.palette().Accent).Underline(true)
-		}
-		items[index] = style.Render(label)
-	}
 	return lipgloss.JoinVertical(lipgloss.Left,
 		theme.Title(m.palette()).Render("BNX  ·  BINANCE MAINNET  ·  "+theme.Names[m.themeIndex]),
-		lipgloss.JoinHorizontal(lipgloss.Top, items[:4]...),
-		lipgloss.JoinHorizontal(lipgloss.Top, items[4:]...),
+		lipgloss.NewStyle().Padding(0, 1).Bold(true).Foreground(m.palette().Accent).Underline(true).Render("1 Spot Market"),
 	)
 }
 
 func (m *Model) statusBar() string {
+	return lipgloss.NewStyle().Width(m.width).Foreground(m.palette().Muted).Render(truncate(m.statusLine(), m.width))
+}
+
+func (m *Model) statusLine() string {
 	state := "REST polling"
 	if m.loading {
 		state = "loading…"
@@ -680,13 +640,36 @@ func (m *Model) statusBar() string {
 	if m.toast != "" {
 		line += "  ·  " + m.toast
 	}
-	return lipgloss.NewStyle().Width(m.width).Foreground(m.palette().Muted).Render(truncate(line, m.width))
+	return line
+}
+
+func (m *Model) spotStatusFooter(bodyHeight int) string {
+	var parts []string
+	controls := "q quote · [ ] range · r refresh · t theme · ctrl+c/q quit"
+	if components.UsesHeatmapGrid(m.width, m.height, m.spotMode) {
+		headerLines := 1
+		if m.search != "" {
+			headerLines++
+		}
+		if m.spotMode == components.HeatmapAuto {
+			headerLines++
+		}
+		heatmapHeight := max(1, bodyHeight-headerLines)
+		gridStatus := components.HeatmapGridStatus(len(m.spotMarketTiles()), m.width, heatmapHeight, m.spotGridTop)
+		parts = append(parts, gridStatus)
+		controls = "q quote · [ ] page · r refresh · t theme · ^C quit"
+	}
+	if m.lastError != "" {
+		parts = append(parts, "error: "+m.lastError)
+	}
+	parts = append(parts, controls)
+	return lipgloss.NewStyle().Width(m.width).Foreground(m.palette().Muted).Render(truncate(strings.Join(parts, "   "), m.width))
 }
 
 func (m *Model) footer() string {
 	text := "1-9 views  j/k move  / search  s sort  f favorite  F favorites  Q quote  t theme  m market  r refresh  ? help  ctrl+c/q quit"
 	if m.view == SpotMarket {
-		text = "1-9 views  j/k move  / search  q quote  v layout  [ ] range  r refresh  ? help  ctrl+c quit"
+		text = "q quote  [ ] range  r refresh  t theme  ctrl+c/q quit"
 	}
 	if m.searching {
 		text = "Search: " + m.search + "_  ·  enter accept  esc cancel"
@@ -889,19 +872,35 @@ func (m *Model) spotMarketView(height int) string {
 	m.spotPage = min(max(0, m.spotPage), pageCount-1)
 	tiles := m.spotMarketTiles()
 	var output strings.Builder
-	output.WriteString("  SPOT MARKET  /  24H MOVERS\n")
 	gridMode := components.UsesHeatmapGrid(m.width, m.height, m.spotMode)
 	start := 0
 	if total > 0 {
 		start = min(m.spotPage*spotMarketPageSize, total)
 	}
 	end := min(start+len(tiles), total)
-	modeDescription := "SIZE = 24H CHANGE"
+	modeDescription := "SIZE 24H CHANGE"
 	if gridMode {
 		modeDescription = "GRID MODE"
 	}
-	_, _ = fmt.Fprintf(&output, "  QUOTE %s (Q)  ·  PAIRS %d-%d / %d ([ ])  ·  %s\n", m.spotQuote, min(start+1, total), end, total, modeDescription)
-	headerLines := 2
+	headerLines := 1
+	counts := m.spotMarketChangeCounts()
+	left := fmt.Sprintf("QUOTE %s  ·  VOLUME RANK  ·  PAIRS %d-%d/%d  ·  %s", m.spotQuote, min(start+1, total), end, total, modeDescription)
+	stats := lipgloss.JoinHorizontal(lipgloss.Top,
+		lipgloss.NewStyle().Foreground(m.palette().HeatPositiveStrong).Bold(true).Render(fmt.Sprintf("+ %d GAIN", counts.gain)),
+		"  ",
+		lipgloss.NewStyle().Foreground(m.palette().HeatNegativeStrong).Bold(true).Render(fmt.Sprintf("− %d LOSS", counts.loss)),
+		"  ",
+		lipgloss.NewStyle().Foreground(m.palette().Muted).Render(fmt.Sprintf("%d FLAT", counts.flat)),
+	)
+	lineWidth := max(1, m.width-2)
+	statsWidth := lipgloss.Width(stats)
+	left = truncate(left, max(1, lineWidth-statsWidth-2))
+	gap := max(1, lineWidth-lipgloss.Width(left)-statsWidth)
+	output.WriteString("  " + left + strings.Repeat(" ", gap) + stats + "\n")
+	if m.search != "" {
+		_, _ = fmt.Fprintf(&output, "  SEARCH %s  ·  esc CLEAR\n", m.search)
+		headerLines++
+	}
 	if gridMode {
 		if m.spotMode == components.HeatmapAuto {
 			output.WriteString("  Terminal small: grid mode (resize to 120x35 for treemap)\n")
@@ -911,7 +910,8 @@ func (m *Model) spotMarketView(height int) string {
 	if len(tiles) == 0 {
 		switch {
 		case m.loading:
-			output.WriteString("\n  Loading Binance Spot symbols and tickers…")
+			spinnerView := lipgloss.NewStyle().Foreground(m.palette().Accent).Bold(true).Render(m.loader.View())
+			output.WriteString("\n\n  " + spinnerView + " Fetching Binance Spot market data…")
 		case m.lastError != "":
 			output.WriteString("\n  Spot data unavailable: " + m.lastError)
 		default:
@@ -919,21 +919,30 @@ func (m *Model) spotMarketView(height int) string {
 		}
 		return output.String()
 	}
-	footerLines := 1
-	if gridMode {
-		footerLines = 2
-	}
-	heatmapHeight := max(1, height-headerLines-footerLines)
+	heatmapHeight := max(1, height-headerLines)
 	output.WriteString(m.spotHeatmap.Render(tiles, max(1, m.width), heatmapHeight, m.width, m.height, m.palette(), m.spotMode, m.spotGridTop))
-	green := lipgloss.NewStyle().Foreground(m.palette().HeatPositiveStrong).Bold(true).Render("+ GAIN")
-	red := lipgloss.NewStyle().Foreground(m.palette().HeatNegativeStrong).Bold(true).Render("− LOSS")
-	neutral := lipgloss.NewStyle().Foreground(m.palette().Muted).Render("0 FLAT")
-	if gridMode {
-		_, _ = fmt.Fprintf(&output, "\n  %s   %s   %s\n  %s  ·  v LAYOUT  ·  j/k SCROLL", green, red, neutral, components.HeatmapGridStatus(len(tiles), m.width, heatmapHeight, m.spotGridTop))
-	} else {
-		_, _ = fmt.Fprintf(&output, "\n  %s   %s   %s   ·   v LAYOUT   Q QUOTE   [ ] RANGE   r REFRESH", green, red, neutral)
-	}
 	return output.String()
+}
+
+type spotChangeCounts struct{ gain, loss, flat int }
+
+func (m *Model) spotMarketChangeCounts() spotChangeCounts {
+	quote := strings.ToUpper(m.spotQuote)
+	counts := spotChangeCounts{}
+	for symbol, ticker := range m.tickers {
+		if !strings.HasSuffix(symbol, quote) || len(symbol) <= len(quote) {
+			continue
+		}
+		switch ticker.PriceChangePercent.Sign() {
+		case 1:
+			counts.gain++
+		case -1:
+			counts.loss++
+		default:
+			counts.flat++
+		}
+	}
+	return counts
 }
 
 const spotMarketPageSize = 100
@@ -975,28 +984,20 @@ func (m *Model) rankedSpotMarketTiles() ([]rankedSpotCoin, int) {
 	if quote == "" {
 		quote = "USDT"
 	}
-	metadata := make(map[string]models.SymbolInfo, len(m.symbols))
-	for _, symbol := range m.symbols {
-		metadata[symbol.Symbol] = symbol
-	}
 	coins := make([]rankedSpotCoin, 0, len(m.tickers))
+	search := strings.ToUpper(strings.TrimSpace(m.search))
 	for _, ticker := range m.tickers {
-		info, hasMetadata := metadata[ticker.Symbol]
-		quoteAsset := ""
-		baseAsset := ""
-		if hasMetadata {
-			if info.Status != "" && info.Status != "TRADING" {
-				continue
-			}
-			quoteAsset, baseAsset = info.QuoteAsset, info.BaseAsset
-		} else if strings.HasSuffix(ticker.Symbol, quote) {
-			quoteAsset = quote
-			baseAsset = strings.TrimSuffix(ticker.Symbol, quote)
-		}
-		if quoteAsset != quote || baseAsset == "" {
+		if !strings.HasSuffix(ticker.Symbol, quote) {
 			continue
 		}
-		coins = append(coins, rankedSpotCoin{base: baseAsset, volume: ticker.QuoteVolume, change: ticker.PriceChangePercent})
+		if search != "" && !strings.Contains(ticker.Symbol, search) {
+			continue
+		}
+		baseAsset := strings.TrimSuffix(ticker.Symbol, quote)
+		if baseAsset == "" {
+			continue
+		}
+		coins = append(coins, rankedSpotCoin{base: baseAsset, volume: ticker.Volume, change: ticker.PriceChangePercent})
 	}
 	sort.Slice(coins, func(i, j int) bool {
 		if coins[i].volume.Equal(coins[j].volume) {
@@ -1008,39 +1009,21 @@ func (m *Model) rankedSpotMarketTiles() ([]rankedSpotCoin, int) {
 }
 
 func (m *Model) spotQuoteOptions() []string {
-	quotes := make(map[string]bool)
-	metadata := make(map[string]models.SymbolInfo, len(m.symbols))
-	for _, symbol := range m.symbols {
-		metadata[symbol.Symbol] = symbol
-	}
+	available := make(map[string]bool)
 	for symbol := range m.tickers {
-		info, ok := metadata[symbol]
-		if !ok || info.Status == "" || info.Status == "TRADING" {
-			if ok && info.QuoteAsset != "" {
-				quotes[info.QuoteAsset] = true
-				continue
-			}
-			for _, candidate := range []string{"USDT", "USDC", "BTC", "FDUSD", "BNB", "ETH", "TUSD", "DAI", "TRY", "EUR", "BRL", "GBP", "AUD", "JPY", "BIDR", "IDRT", "UAH", "RUB", "ZAR", "PLN", "RON", "ARS", "MXN", "NGN", "VAI", "UST", "USDP"} {
-				if strings.HasSuffix(symbol, candidate) && len(symbol) > len(candidate) {
-					quotes[candidate] = true
-					break
-				}
+		for _, candidate := range []string{"USDT", "BTC", "USDC", "ETH"} {
+			if strings.HasSuffix(symbol, candidate) && len(symbol) > len(candidate) {
+				available[candidate] = true
+				break
 			}
 		}
 	}
-	result := make([]string, 0, len(quotes))
-	for quote := range quotes {
-		result = append(result, quote)
+	result := make([]string, 0, 4)
+	for _, quote := range []string{"USDT", "BTC", "USDC", "ETH"} {
+		if available[quote] {
+			result = append(result, quote)
+		}
 	}
-	sort.Slice(result, func(i, j int) bool {
-		if result[i] == "USDT" {
-			return true
-		}
-		if result[j] == "USDT" {
-			return false
-		}
-		return result[i] < result[j]
-	})
 	return result
 }
 
@@ -1481,24 +1464,14 @@ func waitUserDataEvent(ctx context.Context, events <-chan json.RawMessage) tea.C
 
 func (m *Model) helpView() string {
 	bindings := []string{
-		"1–9       Switch views",
-		"9         Open Spot Market heatmap",
-		"j/k ↑/↓   Move selection; g/G first/last row",
-		"/         Search symbols",
-		"s         Cycle sort: symbol, 24h change, quote volume",
-		"f / F     Toggle selected favorite / show favorites only",
-		"Q         Cycle quote filter; in Spot Market q or Q cycles quote tokens",
-		"t         Cycle dark, light, high contrast, colorblind-safe themes",
-		"enter     Open selected symbol",
-		"[ / ]     Change candle interval or Spot Market 100-pair range; + / - zoom chart",
-		"a         Toggle SMA, EMA, Bollinger, and RSI summaries",
-		"m         Cycle market: Spot, USDⓈ-M, COIN-M, Options",
-		"v         Cycle Spot heatmap layout; j/k scroll the compact grid",
-		"Spot Market ranks pairs by 24h quote volume; tile area follows absolute 24h change.",
-		"r         Refresh now; esc backs out",
-		": / ctrl+p Search the action and symbol palette",
-		"?         Open this help; q quits except in Spot Market; ctrl+c/q quits",
-		"All account features are display-only. There are no order-entry controls.",
+		"1         Return to Spot Market",
+		"q / Q     Cycle USDT, BTC, USDC, and ETH quote pairs",
+		"[ / ]     Previous / next 100-pair volume range",
+		"j / k     Scroll rows in compact grid mode",
+		"/         Search displayed Spot pairs; esc clears the search",
+		"t         Cycle dark, light, high contrast, and colorblind-safe themes",
+		"r         Refresh market data",
+		"ctrl+c/q  Quit",
 	}
 	return "\n  KEYBOARD REFERENCE\n\n  " + strings.Join(bindings, "\n  ")
 }

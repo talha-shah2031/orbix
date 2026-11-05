@@ -85,40 +85,116 @@ func TestSearchKeyboardAndResponsiveView(t *testing.T) {
 	require.False(t, state.searching)
 }
 
-func TestCommandPaletteFiltersAndOpensSymbol(t *testing.T) {
+func TestTUIKeepsOnlySpotMarketTab(t *testing.T) {
 	model := New(context.Background(), fakeService{}, marketdata.Spot, "")
-	model.width, model.height = 80, 24
-	model.rows = []models.SymbolInfo{{Symbol: "BTCUSDT"}, {Symbol: "ETHUSDT"}}
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
-	state := asModel(t, updated)
-	require.True(t, state.paletteOpen)
-	updated, _ = state.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("btc")})
-	state = asModel(t, updated)
-	require.Contains(t, state.paletteView(), "BTCUSDT")
-	updated, _ = state.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	state = asModel(t, updated)
-	require.False(t, state.paletteOpen)
-	require.Equal(t, Symbol, state.view)
-	require.Equal(t, "BTCUSDT", state.symbol)
-	require.LessOrEqual(t, lipgloss.Height(state.View()), state.height)
+	model.width, model.height = 120, 40
+	require.Equal(t, SpotMarket, model.view)
+	require.Equal(t, marketdata.Spot, model.product)
+	rendered := model.View()
+	require.Contains(t, rendered, "1 Spot Market")
+	require.NotContains(t, rendered, "Dashboard")
+	require.NotContains(t, rendered, "Markets")
+	require.NotContains(t, rendered, "Futures")
+	model.view = Dashboard
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+	model = asModel(t, updated)
+	require.Equal(t, SpotMarket, model.view, "key 1 should open the only tab")
+	for _, keyRune := range []rune{'2', '3', '4', '5', '6', '7', '8', '9'} {
+		updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{keyRune}})
+		model = asModel(t, updated)
+		require.Equal(t, SpotMarket, model.view, "key %q must not open a removed tab", keyRune)
+	}
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{':'}})
+	model = asModel(t, updated)
+	require.False(t, model.paletteOpen, "command palette must not expose removed views")
+	model.selectView(Dashboard)
+	require.Equal(t, SpotMarket, model.view, "selectView must reject removed views")
 }
 
 func TestViewsFitCommonTerminalSizes(t *testing.T) {
-	model := New(context.Background(), fakeService{}, marketdata.Spot, "BTCUSDT")
+	model := New(context.Background(), fakeService{}, marketdata.USDM, "BTCUSDT")
 	model.tickers["BTCUSDT"] = models.Ticker24h{Symbol: "BTCUSDT"}
-	model.book = models.Depth{}
+	require.Equal(t, marketdata.Spot, model.product, "single-tab TUI should stay on Spot regardless of requested market")
 	for _, size := range []struct{ width, height int }{{80, 24}, {120, 40}} {
 		model.width, model.height = size.width, size.height
-		for view := Dashboard; view <= Help; view++ {
-			model.view = view
-			rendered := model.View()
-			require.NotEmpty(t, rendered, "view %d at %dx%d", view, size.width, size.height)
-			for _, line := range strings.Split(rendered, "\n") {
-				require.LessOrEqual(t, lipgloss.Width(line), size.width, "view %d line exceeds %d columns: %q", view, size.width, line)
-			}
-			require.LessOrEqual(t, lipgloss.Height(rendered), size.height, "view %d exceeds %d terminal rows", view, size.height)
+		rendered := model.View()
+		require.Contains(t, rendered, "Spot Market")
+		require.NotContains(t, rendered, "SPOT MARKET  /  24H MOVERS")
+		require.NotContains(t, rendered, "Dashboard")
+		for _, line := range strings.Split(rendered, "\n") {
+			require.LessOrEqual(t, lipgloss.Width(line), size.width, "line exceeds %d columns: %q", size.width, line)
+		}
+		require.LessOrEqual(t, lipgloss.Height(rendered), size.height, "view exceeds %d terminal rows", size.height)
+	}
+}
+
+func TestSpotMarketCountsAllSelectedQuotePairsOutsideCurrentPage(t *testing.T) {
+	model := New(context.Background(), fakeService{}, marketdata.Spot, "")
+	model.width, model.height = 160, 45
+	model.view = SpotMarket
+	for index := 0; index < 105; index++ {
+		change := decimal.Zero
+		switch index % 3 {
+		case 0:
+			change = decimal.NewFromInt(1)
+		case 1:
+			change = decimal.NewFromInt(-1)
+		}
+		symbol := fmt.Sprintf("C%03dUSDT", index)
+		model.tickers[symbol] = models.Ticker24h{Symbol: symbol, PriceChangePercent: change, Volume: decimal.NewFromInt(int64(105 - index))}
+	}
+	model.tickers["BTCBTC"] = models.Ticker24h{Symbol: "BTCBTC", PriceChangePercent: decimal.NewFromInt(2)}
+
+	rendered := model.spotMarketView(35)
+	require.Contains(t, rendered, "+ 35 GAIN")
+	require.Contains(t, rendered, "− 35 LOSS")
+	require.Contains(t, rendered, "35 FLAT")
+	require.NotContains(t, rendered, "0 35 FLAT")
+	require.NotContains(t, rendered, "\n  + GAIN")
+
+	model.spotQuote = "BTC"
+	rendered = model.spotMarketView(35)
+	require.Contains(t, rendered, "+ 1 GAIN")
+	require.Contains(t, rendered, "− 0 LOSS")
+	require.Contains(t, rendered, "0 FLAT")
+}
+
+func TestSpotMarketStatusAndControlsShareOneFooterRow(t *testing.T) {
+	model := New(context.Background(), fakeService{}, marketdata.Spot, "")
+	model.width, model.height = 140, 40
+	model.loading = false
+	model.tickers["BTCUSDT"] = models.Ticker24h{Symbol: "BTCUSDT", PriceChangePercent: decimal.NewFromInt(1)}
+	rendered := model.View()
+	footerRows := 0
+	for _, line := range strings.Split(rendered, "\n") {
+		if strings.Contains(line, "q quote") {
+			footerRows++
+			require.Contains(t, line, "t theme")
+			require.Contains(t, line, "ctrl+c/q quit")
+			require.NotContains(t, line, "REST polling")
+			require.NotContains(t, line, "SPOT")
 		}
 	}
+	require.Equal(t, 1, footerRows, "keyboard hints should use one row below the heatmap")
+}
+
+func TestSpotMarketShowsSpinnerUntilTickerDataArrives(t *testing.T) {
+	model := New(context.Background(), fakeService{}, marketdata.Spot, "")
+	model.width, model.height = 100, 30
+	loadingView := model.View()
+	require.Contains(t, loadingView, "Fetching Binance Spot market data")
+	firstFrame := model.loader.View()
+	updated, _ := model.Update(model.loader.Tick())
+	model = asModel(t, updated)
+	require.NotEqual(t, firstFrame, model.loader.View(), "spinner should animate while the request is pending")
+
+	updated, _ = model.Update(marketDataMsg{
+		product: marketdata.Spot,
+		tickers: []models.Ticker24h{{Symbol: "BTCUSDT", PriceChangePercent: decimal.NewFromInt(1)}},
+	})
+	model = asModel(t, updated)
+	require.False(t, model.loading)
+	require.NotContains(t, model.View(), "Fetching Binance Spot market data")
 }
 
 func TestSpotMarketSwitchesBetweenTreemapAndSmallGridOnResize(t *testing.T) {
@@ -142,11 +218,11 @@ func TestSpotMarketSwitchesBetweenTreemapAndSmallGridOnResize(t *testing.T) {
 		rendered := model.View()
 		if size.width < 120 || size.height < 35 {
 			require.Contains(t, rendered, "Terminal small: grid mode")
-			require.Contains(t, rendered, "QUOTE USDT (Q)")
-			require.NotContains(t, rendered, "SIZE = 24H CHANGE")
+			require.Contains(t, rendered, "QUOTE USDT")
+			require.NotContains(t, rendered, "SIZE 24H CHANGE")
 		} else {
-			require.Contains(t, rendered, "SIZE = 24H CHANGE")
-			require.Contains(t, rendered, "QUOTE USDT (Q)")
+			require.Contains(t, rendered, "SIZE 24H CHANGE")
+			require.Contains(t, rendered, "QUOTE USDT")
 			require.NotContains(t, rendered, "Terminal small: grid mode")
 		}
 		require.LessOrEqual(t, lipgloss.Height(rendered), size.height)
@@ -156,10 +232,12 @@ func TestSpotMarketSwitchesBetweenTreemapAndSmallGridOnResize(t *testing.T) {
 	}
 	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	state := asModel(t, updated)
-	require.Equal(t, components.HeatmapTreemap, state.spotMode)
-	updated, _ = state.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	require.Equal(t, components.HeatmapAuto, state.spotMode, "layout toggle was removed")
+
+	previousTheme := state.themeIndex
+	updated, _ = state.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
 	state = asModel(t, updated)
-	require.Equal(t, components.HeatmapGrid, state.spotMode)
+	require.Equal(t, (previousTheme+1)%4, state.themeIndex, "theme toggle should remain available")
 }
 
 func TestSpotMarketRanksByVolumeButSizesByPercentChange(t *testing.T) {
@@ -172,15 +250,16 @@ func TestSpotMarketRanksByVolumeButSizesByPercentChange(t *testing.T) {
 		}
 		model.tickers[symbol] = models.Ticker24h{
 			Symbol:             symbol,
-			QuoteVolume:        decimal.NewFromInt(int64(10000 - i)),
+			Volume:             decimal.NewFromInt(int64(10000 - i)),
+			QuoteVolume:        decimal.NewFromInt(int64(i + 1)),
 			PriceChangePercent: change,
 		}
 	}
 	tiles := model.spotMarketTiles()
 	require.Len(t, tiles, 100)
-	require.Equal(t, "C000", tiles[0].Name, "highest quote volume should rank first")
+	require.Equal(t, "C000", tiles[0].Name, "highest base-asset volume should rank first")
 	require.Equal(t, "C001", tiles[1].Name)
-	require.Greater(t, tiles[1].Weight, tiles[0].Weight, "larger 24h move should get the larger tile despite lower quote volume")
+	require.Greater(t, tiles[1].Weight, tiles[0].Weight, "larger 24h move should get the larger tile despite lower base-asset volume")
 }
 
 func TestSpotMarketQuoteFilteringAndPaging(t *testing.T) {
@@ -190,17 +269,35 @@ func TestSpotMarketQuoteFilteringAndPaging(t *testing.T) {
 		{Symbol: "BTCUSDT", BaseAsset: "BTC", QuoteAsset: "USDT", Status: "TRADING"},
 		{Symbol: "ETHUSDT", BaseAsset: "ETH", QuoteAsset: "USDT", Status: "TRADING"},
 		{Symbol: "ETHBTC", BaseAsset: "ETH", QuoteAsset: "BTC", Status: "TRADING"},
+		{Symbol: "ADAUSDC", BaseAsset: "ADA", QuoteAsset: "USDC", Status: "TRADING"},
+		{Symbol: "BNBETH", BaseAsset: "BNB", QuoteAsset: "ETH", Status: "TRADING"},
+		{Symbol: "SOLFDUSD", BaseAsset: "SOL", QuoteAsset: "FDUSD", Status: "TRADING"},
+		{Symbol: "HALTEDUSDT", BaseAsset: "HALTED", QuoteAsset: "USDT", Status: "BREAK"},
 	}
 	for i := 0; i < 205; i++ {
 		symbol := fmt.Sprintf("C%03dUSDT", i)
-		model.tickers[symbol] = models.Ticker24h{Symbol: symbol, QuoteVolume: decimal.NewFromInt(int64(1000 - i))}
+		model.tickers[symbol] = models.Ticker24h{Symbol: symbol, Volume: decimal.NewFromInt(int64(1000 - i)), QuoteVolume: decimal.NewFromInt(int64(i + 1))}
 		model.symbols = append(model.symbols, models.SymbolInfo{Symbol: symbol, BaseAsset: fmt.Sprintf("C%03d", i), QuoteAsset: "USDT", Status: "TRADING"})
 	}
-	model.tickers["BTCUSDT"] = models.Ticker24h{Symbol: "BTCUSDT", QuoteVolume: decimal.NewFromInt(2000)}
-	model.tickers["ETHUSDT"] = models.Ticker24h{Symbol: "ETHUSDT", QuoteVolume: decimal.NewFromInt(1500)}
-	model.tickers["ETHBTC"] = models.Ticker24h{Symbol: "ETHBTC", QuoteVolume: decimal.NewFromInt(500)}
+	model.tickers["BTCUSDT"] = models.Ticker24h{Symbol: "BTCUSDT", Volume: decimal.NewFromInt(2000), QuoteVolume: decimal.NewFromInt(1)}
+	model.tickers["ETHUSDT"] = models.Ticker24h{Symbol: "ETHUSDT", Volume: decimal.NewFromInt(1500), QuoteVolume: decimal.NewFromInt(2)}
+	model.tickers["ETHBTC"] = models.Ticker24h{Symbol: "ETHBTC", Volume: decimal.NewFromInt(500), QuoteVolume: decimal.NewFromInt(3)}
+	model.tickers["ADAUSDC"] = models.Ticker24h{Symbol: "ADAUSDC", Volume: decimal.NewFromInt(600), QuoteVolume: decimal.NewFromInt(4)}
+	model.tickers["BNBETH"] = models.Ticker24h{Symbol: "BNBETH", Volume: decimal.NewFromInt(700), QuoteVolume: decimal.NewFromInt(5)}
+	model.tickers["SOLFDUSD"] = models.Ticker24h{Symbol: "SOLFDUSD", Volume: decimal.NewFromInt(800), QuoteVolume: decimal.NewFromInt(6)}
+	model.tickers["HALTEDUSDT"] = models.Ticker24h{Symbol: "HALTEDUSDT", Volume: decimal.NewFromInt(100), QuoteVolume: decimal.NewFromInt(7000)}
 
-	require.Equal(t, []string{"USDT", "BTC"}, model.spotQuoteOptions())
+	require.Equal(t, []string{"USDT", "BTC", "USDC", "ETH"}, model.spotQuoteOptions())
+	ranked, total := model.rankedSpotMarketTiles()
+	require.Equal(t, 208, total, "count every USDT-suffixed ticker even if exchange metadata marks it inactive")
+	haltedIncluded := false
+	for _, coin := range ranked {
+		if coin.base == "HALTED" {
+			haltedIncluded = true
+			break
+		}
+	}
+	require.True(t, haltedIncluded, "USDT suffix match should not be removed by exchange status metadata")
 	firstPage := model.spotMarketTiles()
 	require.Len(t, firstPage, 100)
 	require.Equal(t, "BTC", firstPage[0].Name)
@@ -216,10 +313,20 @@ func TestSpotMarketQuoteFilteringAndPaging(t *testing.T) {
 	require.Equal(t, "BTC", model.spotQuote)
 	require.Equal(t, 0, model.spotPage, "changing quote token returns to first range")
 	require.Equal(t, []string{"ETH"}, []string{model.spotMarketTiles()[0].Name})
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	model = asModel(t, updated)
+	require.Equal(t, "USDC", model.spotQuote)
+	require.Equal(t, []string{"ADA"}, []string{model.spotMarketTiles()[0].Name})
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	model = asModel(t, updated)
+	require.Equal(t, "ETH", model.spotQuote)
+	require.Equal(t, []string{"BNB"}, []string{model.spotMarketTiles()[0].Name})
 }
 
 func TestLowercaseQStillQuitsOutsideSpotMarket(t *testing.T) {
 	model := New(context.Background(), fakeService{}, marketdata.Spot, "")
+	model.view = Dashboard
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	require.NotNil(t, cmd)
 }

@@ -16,7 +16,7 @@ func newTUICommand(options *globalOptions, runner TUIRunner) *cobra.Command {
 			return launchTUI(cmd.Context(), options, runner, symbol)
 		},
 	}
-	command.Flags().String("symbol", "", "open a symbol detail view after launch")
+	command.Flags().String("symbol", "", "filter Spot Market to this symbol at launch")
 	return command
 }
 
