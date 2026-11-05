@@ -16,7 +16,6 @@ import (
 	"github.com/bubblenexus/bnx/internal/store"
 	"github.com/bubblenexus/bnx/internal/tui/components"
 	"github.com/bubblenexus/bnx/internal/tui/theme"
-	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -63,6 +62,8 @@ type Model struct {
 	spotHeatmap  components.HeatmapRenderer
 	spotMode     components.HeatmapMode
 	spotGridTop  int
+	spotQuote    string
+	spotPage     int
 	symbol       string
 	interval     int
 	zoom         int
@@ -164,7 +165,7 @@ func NewWithStore(ctx context.Context, service Service, product marketdata.Produ
 	}
 	return &Model{ctx: ctx, service: service, local: local, profile: profile, product: product, view: view, symbol: strings.ToUpper(symbol), interval: 3,
 		favorites: make(map[string]bool), tickers: make(map[string]models.Ticker24h), bookTickers: make(map[string]models.BookTicker),
-		sparklines: make(map[string][]models.Kline), loading: true, width: 80, height: 24}
+		sparklines: make(map[string][]models.Kline), loading: true, width: 80, height: 24, spotQuote: "USDT"}
 }
 
 func Run(ctx context.Context, service Service, product marketdata.Product, symbol string, input io.Reader, output io.Writer) error {
@@ -395,7 +396,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterRows()
 		return m, nil
 	}
-	if key.Matches(msg, key.NewBinding(key.WithKeys("q", "ctrl+c"))) {
+	if msg.String() == "ctrl+c" || msg.String() == "ctrl+q" || msg.String() == "q" && m.view != SpotMarket {
 		return m, tea.Quit
 	}
 	switch msg.String() {
@@ -474,9 +475,15 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "a":
 		m.indicators = !m.indicators
-	case "Q":
-		m.quoteIndex = (m.quoteIndex + 1) % len(quoteFilters)
-		m.filterRows()
+	case "q", "Q":
+		if m.view == SpotMarket {
+			m.cycleSpotQuote()
+			return m, nil
+		}
+		if msg.String() == "Q" {
+			m.quoteIndex = (m.quoteIndex + 1) % len(quoteFilters)
+			m.filterRows()
+		}
 	case "m":
 		if m.view == SpotMarket {
 			return m, nil
@@ -493,6 +500,17 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "[", "]":
+		if m.view == SpotMarket {
+			_, total := m.rankedSpotMarketTiles()
+			pages := max(1, (total+spotMarketPageSize-1)/spotMarketPageSize)
+			if msg.String() == "[" {
+				m.spotPage = max(0, m.spotPage-1)
+			} else {
+				m.spotPage = min(pages-1, m.spotPage+1)
+			}
+			m.spotGridTop = 0
+			return m, nil
+		}
 		if msg.String() == "[" {
 			m.interval = (m.interval + len(intervals) - 1) % len(intervals)
 		} else {
@@ -667,6 +685,9 @@ func (m *Model) statusBar() string {
 
 func (m *Model) footer() string {
 	text := "1-9 views  j/k move  / search  s sort  f favorite  F favorites  Q quote  t theme  m market  r refresh  ? help  ctrl+c/q quit"
+	if m.view == SpotMarket {
+		text = "1-9 views  j/k move  / search  q quote  v layout  [ ] range  r refresh  ? help  ctrl+c quit"
+	}
 	if m.searching {
 		text = "Search: " + m.search + "_  ·  enter accept  esc cancel"
 	}
@@ -863,15 +884,24 @@ func (m *Model) analysisTickers() []models.Ticker24h {
 }
 
 func (m *Model) spotMarketView(height int) string {
+	_, total := m.rankedSpotMarketTiles()
+	pageCount := max(1, (total+spotMarketPageSize-1)/spotMarketPageSize)
+	m.spotPage = min(max(0, m.spotPage), pageCount-1)
 	tiles := m.spotMarketTiles()
 	var output strings.Builder
 	output.WriteString("  SPOT MARKET  /  24H MOVERS\n")
 	gridMode := components.UsesHeatmapGrid(m.width, m.height, m.spotMode)
-	headerLines := 1
-	if !gridMode {
-		output.WriteString("  TOP 100 USDT BY QUOTE VOLUME  ·  SIZE & COLOUR = 24H CHANGE\n")
-		headerLines++
+	start := 0
+	if total > 0 {
+		start = min(m.spotPage*spotMarketPageSize, total)
 	}
+	end := min(start+len(tiles), total)
+	modeDescription := "SIZE = 24H CHANGE"
+	if gridMode {
+		modeDescription = "GRID MODE"
+	}
+	_, _ = fmt.Fprintf(&output, "  QUOTE %s (Q)  ·  PAIRS %d-%d / %d ([ ])  ·  %s\n", m.spotQuote, min(start+1, total), end, total, modeDescription)
+	headerLines := 2
 	if gridMode {
 		if m.spotMode == components.HeatmapAuto {
 			output.WriteString("  Terminal small: grid mode (resize to 120x35 for treemap)\n")
@@ -885,7 +915,7 @@ func (m *Model) spotMarketView(height int) string {
 		case m.lastError != "":
 			output.WriteString("\n  Spot data unavailable: " + m.lastError)
 		default:
-			output.WriteString("\n  No USDT Spot pairs are available in the current Binance response.")
+			output.WriteString("\n  No " + m.spotQuote + " Spot pairs are available in the current Binance response.")
 		}
 		return output.String()
 	}
@@ -901,34 +931,18 @@ func (m *Model) spotMarketView(height int) string {
 	if gridMode {
 		_, _ = fmt.Fprintf(&output, "\n  %s   %s   %s\n  %s  ·  v LAYOUT  ·  j/k SCROLL", green, red, neutral, components.HeatmapGridStatus(len(tiles), m.width, heatmapHeight, m.spotGridTop))
 	} else {
-		_, _ = fmt.Fprintf(&output, "\n  %d PAIRS   %s   %s   %s   ·   v LAYOUT   r REFRESH", len(tiles), green, red, neutral)
+		_, _ = fmt.Fprintf(&output, "\n  %s   %s   %s   ·   v LAYOUT   Q QUOTE   [ ] RANGE   r REFRESH", green, red, neutral)
 	}
 	return output.String()
 }
 
+const spotMarketPageSize = 100
+
 func (m *Model) spotMarketTiles() []components.HeatmapTile {
-	if m.product != marketdata.Spot {
-		return nil
-	}
-	type rankedCoin struct {
-		symbol string
-		volume decimal.Decimal
-		change decimal.Decimal
-	}
-	coins := make([]rankedCoin, 0, len(m.tickers))
-	for _, ticker := range m.tickers {
-		if !strings.HasSuffix(ticker.Symbol, "USDT") {
-			continue
-		}
-		coins = append(coins, rankedCoin{symbol: ticker.Symbol, volume: ticker.QuoteVolume, change: ticker.PriceChangePercent})
-	}
-	sort.Slice(coins, func(i, j int) bool {
-		if coins[i].volume.Equal(coins[j].volume) {
-			return coins[i].symbol < coins[j].symbol
-		}
-		return coins[i].volume.GreaterThan(coins[j].volume)
-	})
-	coins = coins[:min(100, len(coins))]
+	coins, _ := m.rankedSpotMarketTiles()
+	start := min(m.spotPage*spotMarketPageSize, len(coins))
+	end := min(start+spotMarketPageSize, len(coins))
+	coins = coins[start:end]
 	tiles := make([]components.HeatmapTile, 0, len(coins))
 	rawWeights := make([]float64, len(coins))
 	for index, coin := range coins {
@@ -938,13 +952,112 @@ func (m *Model) spotMarketTiles() []components.HeatmapTile {
 	weights := components.CapHeatmapWeights(rawWeights, 0.15)
 	for index, coin := range coins {
 		tiles = append(tiles, components.HeatmapTile{
-			Name:   strings.TrimSuffix(coin.symbol, "USDT"),
+			Name:   coin.base,
 			Detail: signedPercent(coin.change),
 			Weight: weights[index],
 			Change: coin.change.InexactFloat64(),
 		})
 	}
 	return tiles
+}
+
+type rankedSpotCoin struct {
+	base   string
+	volume decimal.Decimal
+	change decimal.Decimal
+}
+
+func (m *Model) rankedSpotMarketTiles() ([]rankedSpotCoin, int) {
+	if m.product != marketdata.Spot {
+		return nil, 0
+	}
+	quote := strings.ToUpper(m.spotQuote)
+	if quote == "" {
+		quote = "USDT"
+	}
+	metadata := make(map[string]models.SymbolInfo, len(m.symbols))
+	for _, symbol := range m.symbols {
+		metadata[symbol.Symbol] = symbol
+	}
+	coins := make([]rankedSpotCoin, 0, len(m.tickers))
+	for _, ticker := range m.tickers {
+		info, hasMetadata := metadata[ticker.Symbol]
+		quoteAsset := ""
+		baseAsset := ""
+		if hasMetadata {
+			if info.Status != "" && info.Status != "TRADING" {
+				continue
+			}
+			quoteAsset, baseAsset = info.QuoteAsset, info.BaseAsset
+		} else if strings.HasSuffix(ticker.Symbol, quote) {
+			quoteAsset = quote
+			baseAsset = strings.TrimSuffix(ticker.Symbol, quote)
+		}
+		if quoteAsset != quote || baseAsset == "" {
+			continue
+		}
+		coins = append(coins, rankedSpotCoin{base: baseAsset, volume: ticker.QuoteVolume, change: ticker.PriceChangePercent})
+	}
+	sort.Slice(coins, func(i, j int) bool {
+		if coins[i].volume.Equal(coins[j].volume) {
+			return coins[i].base < coins[j].base
+		}
+		return coins[i].volume.GreaterThan(coins[j].volume)
+	})
+	return coins, len(coins)
+}
+
+func (m *Model) spotQuoteOptions() []string {
+	quotes := make(map[string]bool)
+	metadata := make(map[string]models.SymbolInfo, len(m.symbols))
+	for _, symbol := range m.symbols {
+		metadata[symbol.Symbol] = symbol
+	}
+	for symbol := range m.tickers {
+		info, ok := metadata[symbol]
+		if !ok || info.Status == "" || info.Status == "TRADING" {
+			if ok && info.QuoteAsset != "" {
+				quotes[info.QuoteAsset] = true
+				continue
+			}
+			for _, candidate := range []string{"USDT", "USDC", "BTC", "FDUSD", "BNB", "ETH", "TUSD", "DAI", "TRY", "EUR", "BRL", "GBP", "AUD", "JPY", "BIDR", "IDRT", "UAH", "RUB", "ZAR", "PLN", "RON", "ARS", "MXN", "NGN", "VAI", "UST", "USDP"} {
+				if strings.HasSuffix(symbol, candidate) && len(symbol) > len(candidate) {
+					quotes[candidate] = true
+					break
+				}
+			}
+		}
+	}
+	result := make([]string, 0, len(quotes))
+	for quote := range quotes {
+		result = append(result, quote)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i] == "USDT" {
+			return true
+		}
+		if result[j] == "USDT" {
+			return false
+		}
+		return result[i] < result[j]
+	})
+	return result
+}
+
+func (m *Model) cycleSpotQuote() {
+	quotes := m.spotQuoteOptions()
+	if len(quotes) == 0 {
+		return
+	}
+	current := -1
+	for index, quote := range quotes {
+		if quote == m.spotQuote {
+			current = index
+			break
+		}
+	}
+	m.spotQuote = quotes[(current+1)%len(quotes)]
+	m.spotPage, m.spotGridTop = 0, 0
 }
 
 func (m *Model) bestPrices(ticker models.Ticker24h) (string, string) {
@@ -1374,17 +1487,17 @@ func (m *Model) helpView() string {
 		"/         Search symbols",
 		"s         Cycle sort: symbol, 24h change, quote volume",
 		"f / F     Toggle selected favorite / show favorites only",
-		"Q         Cycle quote asset filter",
+		"Q         Cycle quote filter; in Spot Market q or Q cycles quote tokens",
 		"t         Cycle dark, light, high contrast, colorblind-safe themes",
 		"enter     Open selected symbol",
-		"[ / ]     Change candle interval; + / - zoom chart",
+		"[ / ]     Change candle interval or Spot Market 100-pair range; + / - zoom chart",
 		"a         Toggle SMA, EMA, Bollinger, and RSI summaries",
 		"m         Cycle market: Spot, USDⓈ-M, COIN-M, Options",
 		"v         Cycle Spot heatmap layout; j/k scroll the compact grid",
-		"Spot Market ranks active USDT pairs by 24h quote volume; tile area follows absolute 24h change.",
+		"Spot Market ranks pairs by 24h quote volume; tile area follows absolute 24h change.",
 		"r         Refresh now; esc backs out",
 		": / ctrl+p Search the action and symbol palette",
-		"?         Open this help; ctrl+c/q quits",
+		"?         Open this help; q quits except in Spot Market; ctrl+c/q quits",
 		"All account features are display-only. There are no order-entry controls.",
 	}
 	return "\n  KEYBOARD REFERENCE\n\n  " + strings.Join(bindings, "\n  ")
@@ -1399,12 +1512,9 @@ func (m *Model) loadMarket() tea.Cmd {
 		if err != nil {
 			return marketDataMsg{product: product, err: err}
 		}
-		if view == SpotMarket && product == marketdata.Spot {
-			return marketDataMsg{product: product, tickers: tickers}
-		}
 		bookTickers := []models.BookTicker(nil)
 		var warning error
-		if product != marketdata.Options {
+		if product != marketdata.Options && view != SpotMarket {
 			bookTickers, warning = service.BookTickers(ctx, product)
 		}
 		symbols := cachedSymbols

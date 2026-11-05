@@ -142,9 +142,11 @@ func TestSpotMarketSwitchesBetweenTreemapAndSmallGridOnResize(t *testing.T) {
 		rendered := model.View()
 		if size.width < 120 || size.height < 35 {
 			require.Contains(t, rendered, "Terminal small: grid mode")
-			require.NotContains(t, rendered, "SIZE & COLOUR = 24H CHANGE")
+			require.Contains(t, rendered, "QUOTE USDT (Q)")
+			require.NotContains(t, rendered, "SIZE = 24H CHANGE")
 		} else {
-			require.Contains(t, rendered, "SIZE & COLOUR = 24H CHANGE")
+			require.Contains(t, rendered, "SIZE = 24H CHANGE")
+			require.Contains(t, rendered, "QUOTE USDT (Q)")
 			require.NotContains(t, rendered, "Terminal small: grid mode")
 		}
 		require.LessOrEqual(t, lipgloss.Height(rendered), size.height)
@@ -179,6 +181,47 @@ func TestSpotMarketRanksByVolumeButSizesByPercentChange(t *testing.T) {
 	require.Equal(t, "C000", tiles[0].Name, "highest quote volume should rank first")
 	require.Equal(t, "C001", tiles[1].Name)
 	require.Greater(t, tiles[1].Weight, tiles[0].Weight, "larger 24h move should get the larger tile despite lower quote volume")
+}
+
+func TestSpotMarketQuoteFilteringAndPaging(t *testing.T) {
+	model := New(context.Background(), fakeService{}, marketdata.Spot, "")
+	model.view = SpotMarket
+	model.symbols = []models.SymbolInfo{
+		{Symbol: "BTCUSDT", BaseAsset: "BTC", QuoteAsset: "USDT", Status: "TRADING"},
+		{Symbol: "ETHUSDT", BaseAsset: "ETH", QuoteAsset: "USDT", Status: "TRADING"},
+		{Symbol: "ETHBTC", BaseAsset: "ETH", QuoteAsset: "BTC", Status: "TRADING"},
+	}
+	for i := 0; i < 205; i++ {
+		symbol := fmt.Sprintf("C%03dUSDT", i)
+		model.tickers[symbol] = models.Ticker24h{Symbol: symbol, QuoteVolume: decimal.NewFromInt(int64(1000 - i))}
+		model.symbols = append(model.symbols, models.SymbolInfo{Symbol: symbol, BaseAsset: fmt.Sprintf("C%03d", i), QuoteAsset: "USDT", Status: "TRADING"})
+	}
+	model.tickers["BTCUSDT"] = models.Ticker24h{Symbol: "BTCUSDT", QuoteVolume: decimal.NewFromInt(2000)}
+	model.tickers["ETHUSDT"] = models.Ticker24h{Symbol: "ETHUSDT", QuoteVolume: decimal.NewFromInt(1500)}
+	model.tickers["ETHBTC"] = models.Ticker24h{Symbol: "ETHBTC", QuoteVolume: decimal.NewFromInt(500)}
+
+	require.Equal(t, []string{"USDT", "BTC"}, model.spotQuoteOptions())
+	firstPage := model.spotMarketTiles()
+	require.Len(t, firstPage, 100)
+	require.Equal(t, "BTC", firstPage[0].Name)
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
+	model = asModel(t, updated)
+	require.Equal(t, 1, model.spotPage)
+	require.Len(t, model.spotMarketTiles(), 100)
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	model = asModel(t, updated)
+	require.Nil(t, cmd, "q should change quote instead of quitting in Spot Market")
+	require.Equal(t, "BTC", model.spotQuote)
+	require.Equal(t, 0, model.spotPage, "changing quote token returns to first range")
+	require.Equal(t, []string{"ETH"}, []string{model.spotMarketTiles()[0].Name})
+}
+
+func TestLowercaseQStillQuitsOutsideSpotMarket(t *testing.T) {
+	model := New(context.Background(), fakeService{}, marketdata.Spot, "")
+	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	require.NotNil(t, cmd)
 }
 
 func TestDashboardUsesMajorSymbolsAndBookTickerPrices(t *testing.T) {

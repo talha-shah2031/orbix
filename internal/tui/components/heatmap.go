@@ -37,6 +37,7 @@ type heatmapCell struct {
 	rune rune
 	fg   lipgloss.AdaptiveColor
 	bg   lipgloss.AdaptiveColor
+	bold bool
 	set  bool
 }
 
@@ -243,6 +244,9 @@ func renderCells(tiles []HeatmapTile, rects []heatmapRect, width, height int, pa
 		edge := edgeColor(background, palette.HeatBorder)
 		fillRect(buffer, rect, width, height, foreground, background, edge)
 		labels := TileLabel(tiles[index].Name, tiles[index].Detail, rect.width, rect.height)
+		// Terminal cells have a fixed font size, so use bold emphasis for labels
+		// in larger tiles and regular weight where the available area is tight.
+		bold := rect.width >= 14 && rect.height >= 3
 		if gridMode && rect.height > 1 {
 			labels = []string{runewidth.Truncate(tiles[index].Name, rect.width, "…"), runewidth.Truncate(tiles[index].Detail, rect.width, "…")}
 		}
@@ -253,7 +257,7 @@ func renderCells(tiles []HeatmapTile, rects []heatmapRect, width, height int, pa
 			}
 			lineWidth := runewidth.StringWidth(label)
 			labelX := rect.x + (rect.width-lineWidth)/2
-			writeCellText(buffer, labelX, labelY+lineIndex, label, rect, width, height, foreground, background, edge)
+			writeCellText(buffer, labelX, labelY+lineIndex, label, rect, width, height, foreground, background, edge, bold)
 		}
 	}
 	return renderCellBuffer(buffer, width, height)
@@ -273,7 +277,7 @@ func fillRect(buffer [][]heatmapCell, rect heatmapRect, width, height int, fg, b
 	}
 }
 
-func writeCellText(buffer [][]heatmapCell, x, y int, text string, rect heatmapRect, width, height int, fg, bg, edge lipgloss.AdaptiveColor) {
+func writeCellText(buffer [][]heatmapCell, x, y int, text string, rect heatmapRect, width, height int, fg, bg, edge lipgloss.AdaptiveColor, bold bool) {
 	if y < 0 || y >= height {
 		return
 	}
@@ -289,18 +293,18 @@ func writeCellText(buffer [][]heatmapCell, x, y int, text string, rect heatmapRe
 		if heatmapEdgeCell(x, y, rect) || heatmapEdgeCell(x+cellWidth-1, y, rect) {
 			cellBG = edge
 		}
-		buffer[y][x] = heatmapCell{rune: symbol, fg: fg, bg: cellBG, set: true}
+		buffer[y][x] = heatmapCell{rune: symbol, fg: fg, bg: cellBG, bold: bold, set: true}
 		if cellWidth == 2 {
-			buffer[y][x+1] = heatmapCell{fg: fg, bg: cellBG, set: true}
+			buffer[y][x+1] = heatmapCell{fg: fg, bg: cellBG, bold: bold, set: true}
 		}
 		x += cellWidth
 	}
 }
 
 func heatmapEdgeCell(x, y int, rect heatmapRect) bool {
-	if rect.width >= 3 && rect.height >= 3 {
-		return x == rect.x || x == rect.x+rect.width-1 || y == rect.y || y == rect.y+rect.height-1
-	}
+	// Draw only the right and bottom edges. Since treemap rectangles share
+	// boundaries, this leaves a single dark separator instead of a two-cell
+	// border where neighboring tiles each draw all four sides.
 	return rect.width >= 2 && x == rect.x+rect.width-1 || rect.height >= 2 && y == rect.y+rect.height-1
 }
 
@@ -343,7 +347,7 @@ func renderCellBuffer(buffer [][]heatmapCell, width, height int) string {
 				}
 			}
 			segmentWidth := end - x
-			output.WriteString(lipgloss.NewStyle().Foreground(cell.fg).Background(cell.bg).Width(segmentWidth).MaxWidth(segmentWidth).MaxHeight(1).Render(text.String()))
+			output.WriteString(lipgloss.NewStyle().Foreground(cell.fg).Background(cell.bg).Bold(cell.bold).Width(segmentWidth).MaxWidth(segmentWidth).MaxHeight(1).Render(text.String()))
 			x = end
 		}
 		if y+1 < height {
@@ -354,7 +358,7 @@ func renderCellBuffer(buffer [][]heatmapCell, width, height int) string {
 }
 
 func sameCellStyle(a, b heatmapCell) bool {
-	return b.set && a.fg == b.fg && a.bg == b.bg
+	return b.set && a.fg == b.fg && a.bg == b.bg && a.bold == b.bold
 }
 
 func heatmapColors(tile HeatmapTile, palette theme.Palette) (lipgloss.AdaptiveColor, lipgloss.AdaptiveColor) {
