@@ -170,10 +170,11 @@ func TestSpotMarketStatusAndControlsShareOneFooterRow(t *testing.T) {
 	rendered := model.View()
 	footerRows := 0
 	for _, line := range strings.Split(rendered, "\n") {
-		if strings.Contains(line, "q quote") {
+		if strings.Contains(line, "[ ] range") {
 			footerRows++
-			require.Contains(t, line, "t theme")
 			require.Contains(t, line, "ctrl+c/q quit")
+			require.NotContains(t, line, "e exchange")
+			require.NotContains(t, line, "q quote")
 			require.NotContains(t, line, "REST polling")
 			require.NotContains(t, line, "SPOT")
 		}
@@ -219,13 +220,15 @@ func TestSpotMarketSwitchesBetweenTreemapAndSmallGridOnResize(t *testing.T) {
 		require.Equal(t, size.height, model.height)
 		require.Equal(t, size.width < 120 || size.height < 35, components.UsesHeatmapGrid(model.width, model.height, model.spotMode))
 		rendered := model.View()
+		require.NotContains(t, rendered, "VOLUME RANK")
+		require.NotContains(t, rendered, "SIZE 24H CHANGE")
 		if size.width < 120 || size.height < 35 {
 			require.Contains(t, rendered, "Terminal small: grid mode")
 			require.Contains(t, rendered, "QUOTE USDT")
-			require.NotContains(t, rendered, "SIZE 24H CHANGE")
 		} else {
-			require.Contains(t, rendered, "SIZE 24H CHANGE")
 			require.Contains(t, rendered, "QUOTE USDT")
+			require.Contains(t, rendered, "Rank basis = Volume")
+			require.Contains(t, rendered, "Box Size = 24h % change")
 			require.NotContains(t, rendered, "Terminal small: grid mode")
 		}
 		require.LessOrEqual(t, lipgloss.Height(rendered), size.height)
