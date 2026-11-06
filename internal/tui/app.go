@@ -615,8 +615,13 @@ func (m *Model) selectView(view View) tea.Cmd {
 }
 
 func (m *Model) header() string {
+	brand := theme.Title(m.palette()).Render("ORBIX")
+	selector := lipgloss.NewStyle().Foreground(m.palette().Muted).Render("e ") + m.spotExchangeChoices()
+	selector += lipgloss.NewStyle().Foreground(m.palette().Muted).Render("  ·  t " + theme.Names[m.themeIndex])
+	spacer := strings.Repeat(" ", max(1, m.width-lipgloss.Width(brand)-lipgloss.Width(selector)))
+	titleLine := brand + spacer + selector
 	return lipgloss.JoinVertical(lipgloss.Left,
-		theme.Title(m.palette()).Render("ORBIX  ·  "+m.spotExchange.String()+" SPOT  ·  "+theme.Names[m.themeIndex]),
+		titleLine,
 		lipgloss.NewStyle().Padding(0, 1).Bold(true).Foreground(m.palette().Accent).Underline(true).Render("1 Spot Market"),
 	)
 }
@@ -652,7 +657,7 @@ func (m *Model) statusLine() string {
 
 func (m *Model) spotStatusFooter(bodyHeight int) string {
 	var parts []string
-	controls := "e exchange · q quote · [ ] range · r refresh · t theme · ctrl+c/q quit"
+	controls := "[ ] range · r refresh · ctrl+c/q quit"
 	if components.UsesHeatmapGrid(m.width, m.height, m.spotMode) {
 		headerLines := 1
 		if m.search != "" {
@@ -664,7 +669,7 @@ func (m *Model) spotStatusFooter(bodyHeight int) string {
 		heatmapHeight := max(1, bodyHeight-headerLines)
 		gridStatus := components.HeatmapGridStatus(len(m.spotMarketTiles()), m.width, heatmapHeight, m.spotGridTop)
 		parts = append(parts, gridStatus)
-		controls = "e exchange · q quote · [ ] page · r refresh · t theme · ^C quit"
+		controls = "[ ] page · r refresh · ^C quit"
 	}
 	if m.lastError != "" {
 		parts = append(parts, "error: "+m.lastError)
@@ -676,7 +681,7 @@ func (m *Model) spotStatusFooter(bodyHeight int) string {
 func (m *Model) footer() string {
 	text := "1-9 views  j/k move  / search  s sort  f favorite  F favorites  Q quote  t theme  m market  r refresh  ? help  ctrl+c/q quit"
 	if m.view == SpotMarket {
-		text = "e exchange  q quote  [ ] range  r refresh  t theme  ctrl+c/q quit"
+		text = "[ ] range  r refresh  ctrl+c/q quit"
 	}
 	if m.searching {
 		text = "Search: " + m.search + "_  ·  enter accept  esc cancel"
@@ -885,19 +890,19 @@ func (m *Model) spotMarketView(height int) string {
 		start = min(m.spotPage*spotMarketPageSize, total)
 	}
 	end := min(start+len(tiles), total)
-	modeDescription := "SIZE 24H CHANGE"
-	if gridMode {
-		modeDescription = "GRID MODE"
-	}
 	headerLines := 1
 	counts := m.spotMarketChangeCounts()
-	left := fmt.Sprintf("EXCHANGE %s  ·  QUOTE %s  ·  VOLUME RANK  ·  PAIRS %d-%d/%d  ·  %s", m.spotExchangeChoices(), m.spotQuote, min(start+1, total), end, total, modeDescription)
+	left := fmt.Sprintf("%s | PAIRS [ ] %d-%d/%d", m.spotQuoteChoices(), min(start+1, total), end, total)
 	stats := lipgloss.JoinHorizontal(lipgloss.Top,
 		lipgloss.NewStyle().Foreground(m.palette().HeatPositiveStrong).Bold(true).Render(fmt.Sprintf("+ %d GAIN", counts.gain)),
-		"  ",
+		" | ",
 		lipgloss.NewStyle().Foreground(m.palette().HeatNegativeStrong).Bold(true).Render(fmt.Sprintf("− %d LOSS", counts.loss)),
-		"  ",
+		" | ",
 		lipgloss.NewStyle().Foreground(m.palette().Muted).Render(fmt.Sprintf("%d FLAT", counts.flat)),
+		" | ",
+		lipgloss.NewStyle().Foreground(m.palette().Muted).Render("Rank basis = Volume"),
+		" | ",
+		lipgloss.NewStyle().Foreground(m.palette().Muted).Render("Box Size = 24h % change"),
 	)
 	lineWidth := max(1, m.width-2)
 	statsWidth := lipgloss.Width(stats)
@@ -1082,9 +1087,33 @@ func (m *Model) spotExchangeChoices() string {
 	for _, exchange := range exchanges {
 		name := exchange.String()
 		if exchange == m.spotExchange {
-			name = "[" + name + "]"
+			name = lipgloss.NewStyle().Foreground(m.palette().Accent).Bold(true).Render("[" + name + "]")
+		} else {
+			name = lipgloss.NewStyle().Foreground(m.palette().Muted).Render(name)
 		}
 		choices = append(choices, name)
+	}
+	return strings.Join(choices, " ")
+}
+
+func (m *Model) spotQuoteChoices() string {
+	quotes := m.spotQuoteOptions()
+	if len(quotes) == 0 {
+		quotes = []string{"USDT", "BTC", "USDC", "ETH"}
+	}
+	active := strings.ToUpper(m.spotQuote)
+	if active == "" {
+		active = "USDT"
+	}
+	selected := lipgloss.NewStyle().Foreground(m.palette().Accent).Bold(true).Render(active)
+	choices := []string{
+		lipgloss.NewStyle().Foreground(m.palette().Accent).Bold(true).Render("q"),
+		"QUOTE " + selected,
+	}
+	for _, quote := range quotes {
+		if quote != active {
+			choices = append(choices, lipgloss.NewStyle().Foreground(m.palette().Muted).Render(quote))
+		}
 	}
 	return strings.Join(choices, " ")
 }

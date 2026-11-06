@@ -5,7 +5,7 @@
 *.db
 *.db-shm
 *.db-wal
-.env
 .idea/
-.vscode/
 .tools/
+config.bat
+node_modules
