@@ -6,6 +6,8 @@ All notable changes are documented here. The project follows Semantic Versioning
 
 ### Added
 
+- Native x64 and Arm64 release archives for Windows, macOS, and Linux, with SHA-256 checksums and GitHub build provenance.
+- Cross-platform installation, verification, security-reporting, contribution, and release documentation.
 - Phase 5 signed GET account monitoring, secure keychain login, account views/commands, and reconnecting futures user-data streams.
 - Phase 6 searchable command palette, CSV export, redacted diagnostic ZIP, config init/show, and shell completion generation.
 - Security hardening for JSON-formatted API key/secret/signature redaction and benchmark coverage for book updates, ticker decoding, and table rendering.

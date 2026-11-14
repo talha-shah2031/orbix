@@ -103,3 +103,9 @@ Official references checked 2026-11-03:
 - WEEX public ticker data uses `GET https://api-spot.weex.com/api/v3/market/ticker/24hr`. MEXC's supplied `/api/v3/ticker/24h` returned 404; the documented working route is `GET https://api.mexc.com/api/v3/ticker/24hr`.
 - Live ticker fields from WEEX and MEXC express `priceChangePercent` as a ratio (for example, `0.035522` corresponds to about `3.5522%`), so Orbix multiplies that field by 100. Binance already returns percentage points and is unchanged.
 - References: [WEEX Spot ticker docs](https://www.weex.com/api-doc/zh-CN/spot/MarketDataAPI/GetAllTickerInfo), [MEXC Spot API docs](https://mexcdevelop.github.io/apidocs/spot_v3_en/).
+
+## 2026-11-14: cross-platform distribution
+
+- This decision supersedes the Phase 6 Windows-only release scope above.
+- Version tags on `main` produce CGO-free x64 and Arm64 archives for Windows, macOS, and Linux. Native CI covers both macOS architectures plus Windows and Linux before promotion.
+- Each release includes SHA-256 checksums and GitHub build-provenance attestations. Authenticode signing and Apple notarization remain separate operational work because they require organization-owned signing identities and protected secrets.

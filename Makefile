@@ -1,5 +1,6 @@
 BINARY := orbix
 PACKAGE := ./cmd/orbix
+.DEFAULT_GOAL := build
 ifeq ($(OS),Windows_NT)
 GO ?= $(if $(wildcard .tools/go/bin/go.exe),.tools/go/bin/go.exe,go)
 BINARY_EXT := .exe
@@ -14,7 +15,7 @@ endif
 VERSION ?= dev
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
-.PHONY: build run test lint bench vuln verify
+.PHONY: build run test lint bench vuln verify ci
 
 build:
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY)$(BINARY_EXT) $(PACKAGE)
@@ -37,3 +38,5 @@ vuln:
 
 verify:
 	$(GO) mod verify
+
+ci: verify lint test vuln

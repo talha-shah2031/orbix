@@ -2,37 +2,108 @@ name: Orbix Release
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
-    runs-on: windows-latest
+  verify:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Ensure tagged commit is on main
-        shell: pwsh
+      - name: Require a release tag on main
         run: |
           git fetch origin main
-          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
-          if ($LASTEXITCODE -ne 0) { throw "Release tags must point to a commit on main." }
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
       - uses: actions/setup-go@v7
         with:
           go-version: "1.27.3"
           cache-dependency-path: go.sum
       - run: go mod verify
-      - name: Build Windows executable
-        run: go build -trimpath -ldflags "-s -w -X main.version=$env:GITHUB_REF_NAME -X main.commit=$env:GITHUB_SHA" -o orbix.exe ./cmd/orbix
+      - run: go test ./...
+
+  build:
+    needs: verify
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            extension: tar.gz
+          - goos: linux
+            goarch: arm64
+            extension: tar.gz
+          - goos: darwin
+            goarch: amd64
+            extension: tar.gz
+          - goos: darwin
+            goarch: arm64
+            extension: tar.gz
+          - goos: windows
+            goarch: amd64
+            extension: zip
+          - goos: windows
+            goarch: arm64
+            extension: zip
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.3"
+          cache-dependency-path: go.sum
+      - name: Build and package
         env:
-          GOOS: windows
-          GOARCH: amd64
-          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+          ARCHIVE_EXTENSION: ${{ matrix.extension }}
+        run: |
+          version="$GITHUB_REF_NAME"
+          name="orbix-${version}-${GOOS}-${GOARCH}"
+          binary="orbix"
+          if [ "$GOOS" = "windows" ]; then binary="orbix.exe"; fi
+          mkdir -p "dist/$name"
+          go build -trimpath -ldflags "-s -w -X main.version=$version -X main.commit=$GITHUB_SHA -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o "dist/$name/$binary" ./cmd/orbix
+          cp README.md CHANGELOG.md "dist/$name/"
+          if [ "$ARCHIVE_EXTENSION" = "zip" ]; then
+            (cd dist && zip -qr "$name.zip" "$name")
+          else
+            tar -C dist -czf "dist/$name.tar.gz" "$name"
+          fi
+      - uses: actions/upload-artifact@v6
+        with:
+          name: orbix-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*.${{ matrix.extension }}
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+          pattern: orbix-*
+          merge-multiple: true
+      - name: Create checksums
+        working-directory: dist
+        run: sha256sum orbix-* > SHA256SUMS
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            dist/orbix-*
+            dist/SHA256SUMS
       - name: Publish GitHub release
-        run: gh release create "$env:GITHUB_REF_NAME" orbix.exe --title "ORBIX $env:GITHUB_REF_NAME" --generate-notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "Orbix $GITHUB_REF_NAME" --generate-notes

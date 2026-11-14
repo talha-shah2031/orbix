@@ -1,5 +1,13 @@
 # Security
 
+## Reporting a vulnerability
+
+Do not open a public issue for a suspected vulnerability or leaked credential. Use GitHub's private **Security → Report a vulnerability** form for this repository. Include the affected version, operating system, reproduction steps, impact, and any suggested mitigation. Never include a working API secret.
+
+Maintainers should acknowledge a complete report within five business days. Release timing depends on severity and whether an upstream dependency or exchange must respond first.
+
+Security fixes are provided for the latest published release. Users should verify release checksums or GitHub build provenance before installing an update.
+
 ## Threat model
 
 `orbix` assumes the local user account and operating system are trusted. Primary risks are API credential disclosure, accidental use of privileged endpoints, sensitive data in logs, insecure configuration permissions, dependency compromise, and malicious or malformed remote responses.
@@ -17,7 +25,6 @@ Credentials belong in the OS keychain. `ORBIX_API_KEY` and `ORBIX_API_SECRET` ar
 - Mainnet HTTPS endpoints only; testnet URLs are rejected.
 - JSON file logs pass through a redaction handler.
 - Config permission checks warn when POSIX files are broader than `0600`.
-- CI verifies modules, runs race-enabled tests and strict linting, and executes `govulncheck`.
+- CI verifies modules, runs race-enabled tests and strict linting on Windows, macOS, and Linux, and executes `govulncheck`.
+- Release archives include SHA-256 checksums and GitHub build-provenance attestations.
 - The application has no analytics or telemetry service. The Spot heatmap contacts only the selected public ticker endpoint for Binance, WEEX, or MEXC; other market and account services contact Binance.
-
-Phase 1 adds the central endpoint allowlist and rejection tests that make write endpoints unreachable at the transport boundary.

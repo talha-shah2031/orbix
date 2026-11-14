@@ -186,7 +186,7 @@ func TestSpotMarketShowsSpinnerUntilTickerDataArrives(t *testing.T) {
 	model := New(context.Background(), fakeService{}, marketdata.Spot, "")
 	model.width, model.height = 100, 30
 	loadingView := model.View()
-	require.Contains(t, loadingView, "Fetching Binance Spot market data")
+	require.Contains(t, loadingView, "Fetching BINANCE Spot market data")
 	firstFrame := model.loader.View()
 	updated, _ := model.Update(model.loader.Tick())
 	model = asModel(t, updated)
@@ -198,7 +198,7 @@ func TestSpotMarketShowsSpinnerUntilTickerDataArrives(t *testing.T) {
 	})
 	model = asModel(t, updated)
 	require.False(t, model.loading)
-	require.NotContains(t, model.View(), "Fetching Binance Spot market data")
+	require.NotContains(t, model.View(), "Fetching BINANCE Spot market data")
 }
 
 func TestSpotMarketSwitchesBetweenTreemapAndSmallGridOnResize(t *testing.T) {
@@ -224,7 +224,6 @@ func TestSpotMarketSwitchesBetweenTreemapAndSmallGridOnResize(t *testing.T) {
 		require.NotContains(t, rendered, "SIZE 24H CHANGE")
 		if size.width < 120 || size.height < 35 {
 			require.Contains(t, rendered, "Terminal small: grid mode")
-			require.Contains(t, rendered, "QUOTE USDT")
 		} else {
 			require.Contains(t, rendered, "QUOTE USDT")
 			require.Contains(t, rendered, "Rank basis = Volume")

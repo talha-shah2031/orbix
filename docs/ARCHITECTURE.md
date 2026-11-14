@@ -18,3 +18,7 @@ flowchart LR
 The TUI owns Bubble Tea state and renders from asynchronous command results. Spot heatmap ticker requests use the selected exchange's public Binance, WEEX, or MEXC endpoint; WEEX and MEXC percent ratios are normalized to percentage points. The market stream manager reconnects and fans out into bounded queues. The local order book does not mark itself valid until it has installed a REST snapshot and bridged the buffered diff sequence. SQLite is an optional local cache; live market requests remain available when the DB cannot be opened.
 
 The CLI writes data to stdout and diagnostics to stderr. Secret adapters prefer the OS keychain and fall back to environment variables. Redacted JSON logs never go to the TUI output stream. There is no phone-home telemetry.
+
+## Distribution
+
+Orbix uses only pure-Go dependencies, so release builds set `CGO_ENABLED=0`. The tag workflow cross-compiles x64 and Arm64 binaries for Windows, macOS, and Linux after tests pass. Archives carry version, commit, and UTC build metadata; the release also publishes SHA-256 checksums and GitHub build-provenance attestations.
