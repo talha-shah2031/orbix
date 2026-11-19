@@ -75,7 +75,7 @@ jobs:
           else
             tar -C dist -czf "dist/$name.tar.gz" "$name"
           fi
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: orbix-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*.${{ matrix.extension }}
