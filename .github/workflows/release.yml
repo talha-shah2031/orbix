@@ -97,7 +97,7 @@ jobs:
       - name: Create checksums
         working-directory: dist
         run: sha256sum orbix-* > SHA256SUMS
-      - uses: actions/attest-build-provenance@v3
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/orbix-*
